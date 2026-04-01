@@ -17,7 +17,7 @@ export interface BlogAuthor {
 export interface BlogPost {
   id: string;
   title: string;
-  description: string;
+  description?: string; // Made optional
   content: string;
   thumbnail: string;
   date: string;

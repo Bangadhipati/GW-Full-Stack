@@ -7,12 +7,12 @@ export interface IBlogAuthor {
 
 export interface IBlogPost extends mongoose.Document {
   title: string;
-  description: string;
+  description?: string; // Made optional
   content: string;
   thumbnail: string;
   date: string; // ISO date string, e.g., "YYYY-MM-DD"
   author: string; // Comma-separated string of authors
-  authors?: IBlogAuthor[]; // Structured authors (optional)
+  authors?: IBlogAuthor[]; // New structured authors field
   category: string;
   views: number;
 }
@@ -25,7 +25,7 @@ const BlogAuthorSchema = new mongoose.Schema<IBlogAuthor>({
 const BlogPostSchema = new mongoose.Schema<IBlogPost>(
   {
     title: { type: String, required: true },
-    description: { type: String, required: true },
+    description: { type: String, required: false }, // Made optional
     content: { type: String, required: true },
     thumbnail: { type: String, required: true }, // URL to image
     date: { type: String, required: true }, // Stored as string, e.g., "2023-10-26"

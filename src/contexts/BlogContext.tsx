@@ -12,6 +12,7 @@ export interface BlogAuthor {
 export interface BlogPost extends ClientBlogPost {
   _id: string; // MongoDB _id
   id?: string; // Optional: Keep original frontend `id` if still used locally for some reason.
+  description?: string; // Made optional
   views: number;
 }
 

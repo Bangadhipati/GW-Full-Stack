@@ -8,7 +8,7 @@ export interface ISeedBlogAuthor {
 
 export interface ISeedBlogPost {
   title: string;
-  description: string;
+  description?: string; // Made optional
   content: string;
   thumbnail: string;
   date: string;

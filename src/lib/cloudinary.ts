@@ -1,4 +1,7 @@
-export const uploadImage = async (file: File): Promise<string> => {
+export const uploadImage = async (
+  file: File,
+  onProgress?: (progress: number) => void
+): Promise<string> => {
   const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
   const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
@@ -10,19 +13,34 @@ export const uploadImage = async (file: File): Promise<string> => {
   formData.append("file", file);
   formData.append("upload_preset", uploadPreset);
 
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-    {
-      method: "POST",
-      body: formData,
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`);
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const data = JSON.parse(xhr.responseText);
+        resolve(data.secure_url);
+      } else {
+        const error = JSON.parse(xhr.responseText);
+        reject(new Error(error.message || "Failed to upload image to Cloudinary"));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error("Network error or failed to upload image."));
+    };
+
+    if (onProgress && xhr.upload) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentCompleted = Math.round((event.loaded * 100) / event.total);
+          onProgress(percentCompleted);
+        }
+      };
     }
-  );
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || "Failed to upload image to Cloudinary");
-  }
-
-  const data = await response.json();
-  return data.secure_url;
+    xhr.send(formData);
+  });
 };

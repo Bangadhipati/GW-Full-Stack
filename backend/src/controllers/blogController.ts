@@ -50,9 +50,10 @@ const getBlogPostById = asyncHandler(async (req: Request, res: Response) => {
 const createBlogPost = asyncHandler(async (req: Request, res: Response) => {
   const { title, description, content, thumbnail, date, author, authors, category } = req.body;
 
-  if (!title || !description || !content || !thumbnail || !date || !category) {
+  // Description is now optional
+  if (!title || !content || !thumbnail || !date || !category) {
     res.status(400);
-    throw new Error('Please fill all required fields');
+    throw new Error('Please fill all required fields: Title, Content, Thumbnail, Date, Category');
   }
 
   // Use structured authors if provided, otherwise parse from string

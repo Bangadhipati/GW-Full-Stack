@@ -25,7 +25,7 @@ interface BlogPost {
   _id: string; // The backend uses _id for MongoDB documents
   id?: string; // Optional: Keep original frontend `id` if still used locally for some reason, though `_id` should replace it.
   title: string;
-  description: string;
+  description?: string; // Made optional
   content: string;
   thumbnail: string;
   date: string;

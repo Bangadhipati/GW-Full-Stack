@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { uploadImage } from "@/lib/cloudinary";
+import { compressImage } from "@/lib/imageProcessor"; // Import the new image processor
 import { useAds } from "@/contexts/AdContext";
 import { useAlliances, Alliance } from "@/contexts/AllianceContext";
 import { useBlogs } from "@/contexts/BlogContext";
@@ -16,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import Navbar from "@/components/Navbar";
 import api from "@/api";
 
-// Simplified ImageUploadField to purely handle URL input
+// ImageUploadField to purely handle URL input
 interface ImageUploadFieldProps {
   label: string;
   required?: boolean;
@@ -26,10 +27,28 @@ interface ImageUploadFieldProps {
   labelClass: string;
   placeholder?: string;
   previewClass?: string;
+  // Optional image processing options
+  imageMaxWidth?: number;
+  imageMaxHeight?: number;
+  imageQuality?: number;
 }
 
-const ImageUploadField = ({ label, required, value, onValueChange, inputClass, labelClass, placeholder, previewClass }: ImageUploadFieldProps) => {
+const ImageUploadField = ({
+  label,
+  required,
+  value,
+  onValueChange,
+  inputClass,
+  labelClass,
+  placeholder,
+  previewClass,
+  imageMaxWidth,
+  imageMaxHeight,
+  imageQuality,
+}: ImageUploadFieldProps) => {
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,19 +61,32 @@ const ImageUploadField = ({ label, required, value, onValueChange, inputClass, l
       return;
     }
 
-    setIsUploading(true);
     setError(null);
+    setUploadProgress(0); // Reset progress
+
     try {
-      const url = await uploadImage(file);
+      setIsProcessing(true);
+      // Compress and resize the image client-side before uploading
+      const compressedFile = await compressImage(file, imageMaxWidth, imageMaxHeight, imageQuality);
+      setIsProcessing(false);
+
+      setIsUploading(true);
+      const url = await uploadImage(compressedFile, (progress) => {
+        setUploadProgress(progress);
+      });
       onValueChange(url);
     } catch (err: any) {
       console.error("Upload error:", err);
       setError(err.message || "Failed to upload image");
     } finally {
+      setIsProcessing(false);
       setIsUploading(false);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  const isLoading = isProcessing || isUploading;
 
   return (
     <div className="space-y-1.5">
@@ -81,11 +113,11 @@ const ImageUploadField = ({ label, required, value, onValueChange, inputClass, l
             type="button"
             variant="secondary"
             size="sm"
-            disabled={isUploading}
+            disabled={isLoading}
             onClick={() => fileInputRef.current?.click()}
             className="h-10 shrink-0 bg-secondary/80 hover:bg-secondary border border-border"
           >
-            {isUploading ? (
+            {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Upload className="h-4 w-4" />
@@ -93,6 +125,15 @@ const ImageUploadField = ({ label, required, value, onValueChange, inputClass, l
           </Button>
         </div>
         {error && <p className="text-[10px] text-destructive font-body">{error}</p>}
+        {isProcessing && <p className="text-[10px] text-muted-foreground font-body">Processing image for upload...</p>}
+        {isUploading && (
+          <div className="text-[10px] text-muted-foreground font-body flex items-center gap-2">
+            <span>Uploading: {uploadProgress}%</span>
+            <div className="h-1 w-full bg-border rounded-full">
+              <div className="h-full bg-primary rounded-full transition-all duration-100" style={{ width: `${uploadProgress}%` }}></div>
+            </div>
+          </div>
+        )}
       </div>
       {value && (
         <div className={`mt-2 overflow-hidden rounded-lg border border-border ${previewClass || "aspect-video max-h-40"}`}>
@@ -249,8 +290,8 @@ const Dashboard = () => {
     } else {
       // For new blogs, _id is not required, and views will be defaulted by backend
       // Basic validation for new posts:
-      if (!blogDataToSend.title || !blogDataToSend.description || !blogDataToSend.content || !blogDataToSend.thumbnail || !blogDataToSend.date || !blogDataToSend.category || !blogDataToSend.author) {
-          setUserError("Please fill all required fields: Title, Description, Content, Thumbnail, Date, Author, Category.");
+      if (!blogDataToSend.title || !blogDataToSend.content || !blogDataToSend.thumbnail || !blogDataToSend.date || !blogDataToSend.category || !blogDataToSend.author) {
+          setUserError("Please fill all required fields: Title, Content, Thumbnail, Date, Author, Category.");
           return;
       }
       errorMsg = await addBlog(blogDataToSend);
@@ -278,10 +319,16 @@ const Dashboard = () => {
   };
 
   const handleNew = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+    const day = String(today.getDate()).padStart(2, '0');
+    const formattedDate = `${year}-${month}-${day}`;
+
     setEditingBlog({
       _id: "", // Empty _id signifies a new post
       title: "", description: "", content: "", thumbnail: "",
-      date: new Date().toISOString().split("T")[0],
+      date: formattedDate, // Set to local current date
       author: user.name, // This will be overwritten by `authorString` on save.
       authors: [{ name: user.name, bio: "" }], // Start with current user as first author
       category: "", views: 0
@@ -868,13 +915,13 @@ const Dashboard = () => {
                 <ImageUploadField
                   label="Thumbnail Image"
                   value={editingBlog.thumbnail}
-                  onValueChange={(url) => setEditingBlog({ ...editingBlog, thumbnail: url })}
+                  onValueChange={(url) => setEditingBlog((prev) => ({ ...prev!, thumbnail: url }))}
                   inputClass={inputClass}
                   labelClass={labelClass}
                 />
                 <div>
-                  <label className={labelClass}>Description</label>
-                  <input type="text" value={editingBlog.description} onChange={(e) => setEditingBlog({ ...editingBlog, description: e.target.value })} className={inputClass} />
+                  <label className={labelClass}>Description <span className="text-muted-foreground/50">(optional)</span></label>
+                  <input type="text" value={editingBlog.description || ""} onChange={(e) => setEditingBlog({ ...editingBlog, description: e.target.value })} className={inputClass} />
                 </div>
                 <div>
                   <label className={labelClass}>Content (Markdown)</label>
@@ -908,7 +955,7 @@ const Dashboard = () => {
                   label="Horizontal Image (3:1)"
                   required
                   value={editingAd.horizontalImageUrl || ""}
-                  onValueChange={(url) => setEditingAd({ ...editingAd, horizontalImageUrl: url })}
+                  onValueChange={(url) => setEditingAd((prev) => ({ ...prev!, horizontalImageUrl: url }))}
                   inputClass={inputClass}
                   labelClass={labelClass}
                   placeholder="https://example.com/ad-h.jpg"
@@ -918,7 +965,7 @@ const Dashboard = () => {
                   label="Vertical Image (1:2)"
                   required
                   value={editingAd.verticalImageUrl || ""}
-                  onValueChange={(url) => setEditingAd({ ...editingAd, verticalImageUrl: url })}
+                  onValueChange={(url) => setEditingAd((prev) => ({ ...prev!, verticalImageUrl: url }))}
                   inputClass={inputClass}
                   labelClass={labelClass}
                   placeholder="https://example.com/ad-v.jpg"
@@ -1021,7 +1068,7 @@ const Dashboard = () => {
                   label="Logo"
                   required
                   value={editingAlliance.logo || ""}
-                  onValueChange={(url) => setEditingAlliance({ ...editingAlliance, logo: url })}
+                  onValueChange={(url) => setEditingAlliance((prev) => ({ ...prev!, logo: url }))}
                   inputClass={inputClass}
                   labelClass={labelClass}
                   placeholder="https://example.com/logo.png"
