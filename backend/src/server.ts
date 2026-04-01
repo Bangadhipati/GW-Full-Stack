@@ -109,7 +109,3 @@ process.on('uncaughtException', (err: any) => {
   });
 });
 // --- END GLOBAL UNHANDLED ERROR HANDLERS ---
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
