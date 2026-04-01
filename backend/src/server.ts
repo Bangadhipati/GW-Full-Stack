@@ -56,7 +56,9 @@ app.use('/api/alliances', allianceRoutes);
 // --- ADD THIS ERROR HANDLING MIDDLEWARE BLOCK ---
 // Catch-all for 404 Not Found errors
 app.use((req, res, next) => {
-  res.status(404).json({ message: `Not Found - ${req.originalUrl}` });
+  const error = new Error(`Not Found - ${req.originalUrl}`);
+  res.status(404); // Set status before passing to next error handler
+  next(error); // Pass to the generic error handler
 });
 
 // Generic error handler middleware
@@ -64,6 +66,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   // If status code is 200 (meaning no error status was explicitly set yet), default to 500
   const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
   res.status(statusCode);
+  console.error(`[ERROR] ${err.message}`); // Log the error on the server
+  if (process.env.NODE_ENV !== 'production') {
+    console.error(err.stack); // Log stack in development
+  }
   res.json({
     message: err.message,
     stack: process.env.NODE_ENV === 'production' ? null : err.stack,
@@ -73,6 +79,36 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 
 const PORT = process.env.PORT || 5000;
+
+const server = app.listen(PORT, () => { // Assign app.listen to a variable
+  console.log(`Server running on port ${PORT}`);
+});
+
+// --- GLOBAL UNHANDLED ERROR HANDLERS ---
+// Catch unhandled promise rejections
+process.on('unhandledRejection', (err: any) => {
+  console.error(`[CRITICAL] Unhandled Rejection: ${err.message}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.error(err.stack);
+  }
+  // Log the error and gracefully shut down the server
+  server.close(() => {
+    process.exit(1); // Exit with failure code
+  });
+});
+
+// Catch uncaught exceptions
+process.on('uncaughtException', (err: any) => {
+  console.error(`[CRITICAL] Uncaught Exception: ${err.message}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.error(err.stack);
+  }
+  // Log the error and gracefully shut down the server
+  server.close(() => {
+    process.exit(1); // Exit with failure code
+  });
+});
+// --- END GLOBAL UNHANDLED ERROR HANDLERS ---
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
