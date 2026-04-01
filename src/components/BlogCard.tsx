@@ -1,6 +1,7 @@
 import { BlogPost } from "@/data/blogs";
 import { Link } from "react-router-dom";
 import { Calendar, User as UserIcon } from "lucide-react";
+import api from "@/api";
 
 interface BlogCardProps {
   blog: BlogPost;
@@ -28,10 +29,11 @@ const BlogCard = ({ blog, variant = "standard" }: BlogCardProps) => {
     >
       {/* Thumbnail */}
       <img
-        src={blog.thumbnail}
+        src={`${blog.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${blog.thumbnail}`}
         alt={blog.title}
         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
         loading="lazy"
+        decoding="async"
       />
 
       {/* Dark overlay */}

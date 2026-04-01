@@ -1,9 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Calendar, User as UserIcon, ChevronRight, Share2 } from "lucide-react";
-import { useBlogs } from "@/contexts/BlogContext";
-import Navbar from "@/components/Navbar";
+import { useBlogs, BlogPost } from "@/contexts/BlogContext"; // Import BlogPost from context
+import Navbar from "@/components/Navbar"; // Make sure Navbar is imported, it seems you have a copy of it in ui
 import AdBanner from "@/components/AdBanner";
+import api from "@/api"; // Import your API client
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const AUTHOR_BIOS: Record<string, string> = {
   "Debarghya Bhowmick": "Computer Science Engineer · Core & Founding Member of GW",
@@ -44,24 +47,66 @@ const ShareButton = ({ className = "" }: { className?: string }) => {
   );
 };
 
-const BlogPost = () => {
+const BlogPostPage = () => { // Renamed to BlogPostPage
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { blogs } = useBlogs();
-  const blog = blogs.find((b) => b.id === id);
+  const { blogs, getBlogById, fetchBlogs, fetchTotalViews } = useBlogs();
+  const [blog, setBlog] = useState<BlogPost | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { window.scrollTo(0, 0); }, [id]);
+  const loadBlog = useCallback(async () => {
+    if (!id) {
+      navigate("/404");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const fetchedBlog = await getBlogById(id);
+      if (fetchedBlog) {
+        setBlog(fetchedBlog);
+        fetchTotalViews(); // Update total views after fetching a blog (which increments its view count)
+      } else {
+        navigate("/404");
+      }
+    } catch (err: any) {
+      console.error("Error fetching blog post:", err);
+      setError(err.message || "Failed to load blog post");
+      setBlog(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [id, navigate, getBlogById, fetchTotalViews]);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    loadBlog();
+  }, [loadBlog]);
+
 
   const relatedPosts = blog
-    ? blogs.filter((b) => b.category === blog.category && b.id !== blog.id).slice(0, 3)
+    ? blogs.filter((b) => b.category === blog.category && b._id !== blog._id).slice(0, 3)
     : [];
 
-  if (!blog) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Navbar />
         <div className="text-center pt-20">
-          <h1 className="font-display text-3xl text-primary">Article Not Found</h1>
+          <p className="font-display text-2xl text-primary">Loading Article...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !blog) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Navbar />
+        <div className="text-center pt-20">
+          <h1 className="font-display text-3xl text-primary">Error Loading Article</h1>
+          <p className="text-muted-foreground mt-2">{error}</p>
           <Link to="/" className="mt-4 inline-block font-body text-muted-foreground underline hover:text-primary">Back to Home</Link>
         </div>
       </div>
@@ -107,7 +152,13 @@ const BlogPost = () => {
             </header>
             <div className="relative overflow-hidden rounded-lg sm:rounded-xl md:rounded-2xl aspect-[16/8] sm:aspect-[16/7]">
               {blog.thumbnail ? (
-                <img src={blog.thumbnail} alt={blog.title} className="absolute inset-0 h-full w-full object-cover" />
+                <img 
+                  src={`${blog.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${blog.thumbnail}`} 
+                  alt={blog.title} 
+                  className="absolute inset-0 h-full w-full object-cover" 
+                  fetchpriority="high"
+                  decoding="sync"
+                />
               ) : (
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-secondary to-background" />
               )}
@@ -115,18 +166,33 @@ const BlogPost = () => {
             </div>
             <div className="xl:hidden mt-6"><AdBanner orientation="horizontal" /></div>
             <article className="py-8 sm:py-12 md:py-14 max-w-3xl mx-auto">
-              <div className="font-body text-[15px] leading-[1.8] text-secondary-foreground/80 space-y-5 sm:text-base sm:leading-[1.85] md:text-[17px] md:leading-[1.9]">
-                {blog.content.split("\n\n").map((paragraph, i) => {
-                  if (paragraph.startsWith("## ")) {
-                    return (
-                      <h2 key={i} className="mt-8 mb-3 font-display text-lg font-bold text-foreground sm:mt-10 sm:mb-4 sm:text-xl md:text-2xl first:mt-0">
-                        <span className="mr-2 inline-block h-5 w-1 rounded-full bg-primary align-middle sm:h-6" />
-                        {paragraph.replace("## ", "")}
-                      </h2>
-                    );
-                  }
-                  return <p key={i} className="text-secondary-foreground/75">{paragraph}</p>;
-                })}
+              <div className="font-body text-[15px] leading-[1.8] text-secondary-foreground/80 sm:text-base sm:leading-[1.85] md:text-[17px] md:leading-[1.9]">
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  className="prose prose-invert max-w-none 
+                    prose-headings:font-display prose-headings:font-bold prose-headings:tracking-wide prose-headings:text-foreground
+                    prose-h2:border-l-4 prose-h2:border-primary prose-h2:pl-4 prose-h2:mt-10 prose-h2:mb-4
+                    prose-p:text-secondary-foreground/75 prose-p:leading-relaxed
+                    prose-strong:text-primary prose-strong:font-bold
+                    prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+                    prose-blockquote:border-l-primary prose-blockquote:bg-primary/5 prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:rounded-r-lg
+                    prose-img:rounded-xl prose-img:border prose-img:border-border
+                    prose-ul:list-disc prose-ol:list-decimal"
+                  components={{
+                    img: ({ node, ...props }) => (
+                      <img 
+                        {...props} 
+                        src={props.src?.startsWith('http') ? props.src : `${api.API_STATIC_BASE_URL}${props.src}`} 
+                        alt={props.alt || ''}
+                        className="rounded-xl border border-border w-full object-cover my-8"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ),
+                  }}
+                >
+                  {blog.content}
+                </ReactMarkdown>
               </div>
             </article>
             <div className="max-w-3xl mx-auto">
@@ -141,9 +207,15 @@ const BlogPost = () => {
                 <h3 className="mb-6 font-display text-lg font-bold text-foreground sm:mb-8 sm:text-xl">Related Articles</h3>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 sm:gap-5">
                   {relatedPosts.map((post) => (
-                    <Link key={post.id} to={`/blog/${post.id}`} className="group overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-primary/30 hover:glow-red">
+                    <Link key={post._id} to={`/blog/${post._id}`} className="group overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-primary/30 hover:glow-red">
                       <div className="aspect-[16/10] overflow-hidden">
-                        <img src={post.thumbnail} alt={post.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                        <img 
+                          src={`${post.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${post.thumbnail}`} 
+                          alt={post.title} 
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                        />
                       </div>
                       <div className="p-3 sm:p-4">
                         <span className="mb-1.5 inline-block text-[10px] font-heading font-bold tracking-wider text-primary uppercase">{post.category}</span>
@@ -196,4 +268,4 @@ const BlogPost = () => {
   );
 };
 
-export default BlogPost;
+export default BlogPostPage;

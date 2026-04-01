@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAds } from "@/contexts/AdContext";
 import { Ad } from "@/data/ads";
 import { cn } from "@/lib/utils";
+import api from "@/api";
 
 interface AdBannerProps {
   orientation?: "vertical" | "horizontal";
@@ -95,13 +96,14 @@ const AdBanner = ({ orientation = "vertical", className }: AdBannerProps) => {
         orientation === "vertical" ? "aspect-[1/2]" : "aspect-[3/1]"
       )}>
         <img
-          src={orientation === "vertical" ? ad.verticalImageUrl : ad.horizontalImageUrl}
+          src={`${(orientation === "vertical" ? ad.verticalImageUrl : ad.horizontalImageUrl).startsWith('http') ? '' : api.API_STATIC_BASE_URL}${orientation === "vertical" ? ad.verticalImageUrl : ad.horizontalImageUrl}`}
           alt={ad.label || "Advertisement"}
           className={cn(
             "absolute inset-0 h-full w-full object-cover transition-opacity duration-300 pointer-events-none",
             isTransitioning ? "opacity-0" : "opacity-100"
           )}
           loading="lazy"
+          decoding="async"
           draggable={false}
         />
         {ad.label && (

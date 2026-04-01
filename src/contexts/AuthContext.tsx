@@ -1,45 +1,32 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode, useEffect, useCallback, useMemo } from "react";
+import api from '../api'; // Import your API client
 
 export type UserRole = "admin" | "editor" | "ad_manager";
 
+// User interface from backend response
 export interface AppUser {
+  _id: string; // MongoDB _id
   email: string;
   name: string;
   role: UserRole;
-  password: string;
+  token?: string; // JWT token, stored on client
 }
 
 interface AuthContextType {
-  user: Omit<AppUser, "password"> | null;
+  user: Omit<AppUser, "token"> | null; // User object without the token for context
+  token: string | null; // JWT token
   isAdmin: boolean;
   hasRole: (role: UserRole) => boolean;
-  signIn: (email: string, password: string) => string | null;
+  signIn: (email: string, password: string) => Promise<string | null>;
   signOut: () => void;
-  accounts: AppUser[];
-  updatePassword: (email: string, newPassword: string) => string | null;
-  addAccount: (account: AppUser) => string | null;
-  removeAccount: (email: string) => string | null;
-  updateAccountRole: (email: string, role: UserRole) => string | null;
-  updateAccountDetails: (oldEmail: string, updates: { name?: string; email?: string }) => string | null;
-}
-
-const ACCOUNTS_KEY = "gw-accounts";
-
-const DEFAULT_ACCOUNTS: AppUser[] = [
-  { email: "bangadhipati@gmail.com", password: "1234", name: "Bangadhipati", role: "admin" },
-  { email: "vangadhipati@gmail.com", password: "1234", name: "Vangadhipati", role: "editor" },
-  { email: "debarghya.bhowmick@yahoo.com", password: "1234", name: "Debarghya Bhowmick", role: "ad_manager" },
-];
-
-function loadAccounts(): AppUser[] {
-  try {
-    const stored = localStorage.getItem(ACCOUNTS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
-  return DEFAULT_ACCOUNTS;
+  accounts: AppUser[]; // Only email, name, role (no password or token)
+  userCount: number;
+  fetchAccounts: () => void;
+  updatePassword: (email: string, userId: string, newPassword: string) => Promise<string | null>;
+  addAccount: (account: { name: string; email: string; password: string; role: UserRole }) => Promise<string | null>;
+  removeAccount: (userId: string) => Promise<string | null>;
+  updateAccountRole: (userId: string, role: UserRole) => Promise<string | null>;
+  updateAccountDetails: (userId: string, updates: { name?: string; email?: string }) => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -51,83 +38,162 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [accounts, setAccounts] = useState<AppUser[]>(loadAccounts);
-  const [user, setUser] = useState<Omit<AppUser, "password"> | null>(null);
+  const [user, setUser] = useState<Omit<AppUser, "token"> | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<AppUser[]>([]); // To store user list for admin dashboard
+  const [userCount, setUserCount] = useState(0);
 
-  const persistAccounts = (accs: AppUser[]) => {
-    setAccounts(accs);
-    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accs));
+  // Load user and token from session storage on mount
+  useEffect(() => {
+    const storedUser = sessionStorage.getItem("gw-user");
+    const storedToken = sessionStorage.getItem("gw-token");
+    if (storedUser && storedToken) {
+      try {
+        setUser(JSON.parse(storedUser));
+        setToken(storedToken);
+      } catch (error) {
+        console.error("Failed to parse stored user or token:", error);
+        sessionStorage.removeItem("gw-user");
+        sessionStorage.removeItem("gw-token");
+      }
+    }
+  }, []);
+
+  const signIn = async (email: string, password: string): Promise<string | null> => {
+    try {
+      const response = await api.login(email, password);
+      const { token: jwtToken, ...userData } = response;
+      setUser(userData);
+      setToken(jwtToken);
+      sessionStorage.setItem("gw-user", JSON.stringify(userData));
+      sessionStorage.setItem("gw-token", jwtToken);
+      return null;
+    } catch (error: any) {
+      return error.message;
+    }
   };
 
-  const signIn = (email: string, password: string): string | null => {
-    const account = accounts.find((a) => a.email.toLowerCase() === email.toLowerCase());
-    if (!account) return "Invalid email address";
-    if (account.password !== password) return "Incorrect password";
-    setUser({ email: account.email, name: account.name, role: account.role });
-    return null;
+  const signOut = () => {
+    setUser(null);
+    setToken(null);
+    sessionStorage.removeItem("gw-user");
+    sessionStorage.removeItem("gw-token");
   };
 
-  const signOut = () => setUser(null);
-
-  const isAdmin = user?.role === "admin";
+  const isAdmin = useMemo(() => user?.role === "admin", [user]);
 
   const hasRole = (role: UserRole) => user?.role === role;
 
-  const updatePassword = (email: string, newPassword: string): string | null => {
-    if (!user || user.role !== "admin") return "Only admins can change passwords";
-    if (!newPassword || newPassword.length < 4) return "Password must be at least 4 characters";
-    const updated = accounts.map((a) =>
-      a.email.toLowerCase() === email.toLowerCase() ? { ...a, password: newPassword } : a
-    );
-    persistAccounts(updated);
-    return null;
-  };
-
-  const addAccount = (account: AppUser): string | null => {
-    if (!user || user.role !== "admin") return "Only admins can add accounts";
-    if (accounts.find((a) => a.email.toLowerCase() === account.email.toLowerCase())) {
-      return "Email already exists";
+  const fetchAccounts = useCallback(async () => {
+    if (!token) return;
+    
+    // Always fetch the count for everyone
+    try {
+      const { count } = await api.getUserCount(token);
+      setUserCount(count);
+    } catch (error: any) {
+      console.error("Failed to fetch user count:", error.message);
     }
-    persistAccounts([...accounts, account]);
-    return null;
-  };
 
-  const removeAccount = (email: string): string | null => {
-    if (!user || user.role !== "admin") return "Only admins can remove accounts";
-    if (email.toLowerCase() === "bangadhipati@gmail.com") return "Cannot remove the primary admin";
-    persistAccounts(accounts.filter((a) => a.email.toLowerCase() !== email.toLowerCase()));
-    return null;
-  };
-
-  const updateAccountRole = (email: string, role: UserRole): string | null => {
-    if (!user || user.role !== "admin") return "Only admins can change roles";
-    if (email.toLowerCase() === "bangadhipati@gmail.com") return "Cannot change primary admin role";
-    const updated = accounts.map((a) =>
-      a.email.toLowerCase() === email.toLowerCase() ? { ...a, role } : a
-    );
-    persistAccounts(updated);
-    return null;
-  };
-
-  const updateAccountDetails = (oldEmail: string, updates: { name?: string; email?: string }): string | null => {
-    if (!user || user.role !== "admin") return "Only admins can update accounts";
-    if (updates.email && updates.email.toLowerCase() !== oldEmail.toLowerCase()) {
-      if (accounts.find((a) => a.email.toLowerCase() === updates.email!.toLowerCase())) {
-        return "Email already exists";
+    // Only fetch full list for admins
+    if (user?.role === 'admin') {
+      try {
+        const fetchedAccounts = await api.getUsers(token);
+        setAccounts(fetchedAccounts.map(acc => ({ _id: acc._id, name: acc.name, email: acc.email, role: acc.role })));
+      } catch (error: any) {
+        console.error("Failed to fetch accounts list:", error.message);
       }
+    } else {
+      setAccounts([]);
     }
-    const updated = accounts.map((a) =>
-      a.email.toLowerCase() === oldEmail.toLowerCase()
-        ? { ...a, ...(updates.name && { name: updates.name }), ...(updates.email && { email: updates.email }) }
-        : a
-    );
-    persistAccounts(updated);
-    return null;
+  }, [token, user]);
+
+  useEffect(() => {
+    if (user && token) {
+      fetchAccounts();
+    } else {
+      setAccounts([]);
+    }
+  }, [user, token, fetchAccounts]);
+
+  const updatePassword = async (email: string, userId: string, newPassword: string): Promise<string | null> => {
+    if (!token) return "Authentication required to update password.";
+    if (!newPassword || newPassword.length < 4) return "Password must be at least 4 characters.";
+    try {
+      await api.updateUserPassword(userId, newPassword, token);
+      fetchAccounts(); // Refresh the list
+      return null;
+    } catch (error: any) {
+      return error.message;
+    }
+  };
+
+  const addAccount = async (account: { name: string; email: string; password: string; role: UserRole }): Promise<string | null> => {
+    if (!token) return "Authentication required to add an account.";
+    try {
+      await api.addUser(account, token);
+      fetchAccounts(); // Refresh the list
+      return null;
+    } catch (error: any) {
+      return error.message;
+    }
+  };
+
+  const removeAccount = async (userId: string): Promise<string | null> => {
+    if (!token) return "Authentication required to remove an account.";
+    try {
+      await api.deleteUser(userId, token);
+      fetchAccounts(); // Refresh the list
+      return null;
+    } catch (error: any) {
+      return error.message;
+    }
+  };
+
+  const updateAccountRole = async (userId: string, role: UserRole): Promise<string | null> => {
+    if (!token) return "Authentication required to update roles.";
+    try {
+      await api.updateUserRole(userId, role, token);
+      fetchAccounts(); // Refresh the list
+      return null;
+    } catch (error: any) {
+      return error.message;
+    }
+  };
+
+  const updateAccountDetails = async (userId: string, updates: { name?: string; email?: string }): Promise<string | null> => {
+    if (!token) return "Authentication required to update account details.";
+    try {
+      await api.updateUserDetails(userId, updates, token);
+      fetchAccounts(); // Refresh the list
+      // If the current user updated their own details, update context user as well
+      if (user && user._id === userId) {
+        setUser(prev => ({ ...prev!, ...updates }));
+      }
+      return null;
+    } catch (error: any) {
+      return error.message;
+    }
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, isAdmin, hasRole, signIn, signOut, accounts, updatePassword, addAccount, removeAccount, updateAccountRole, updateAccountDetails }}
+      value={{
+        user,
+        token,
+        isAdmin,
+        hasRole,
+        signIn,
+        signOut,
+        accounts,
+        userCount,
+        fetchAccounts,
+        updatePassword,
+        addAccount,
+        removeAccount,
+        updateAccountRole,
+        updateAccountDetails,
+      }}
     >
       {children}
     </AuthContext.Provider>

@@ -1,8 +1,16 @@
+import { useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import HeroBanner from "@/components/HeroBanner";
 import BlogSection from "@/components/BlogSection";
+import { useBlogs } from "@/contexts/BlogContext";
 
 const Index = () => {
+  const { trackSiteVisit } = useBlogs();
+
+  useEffect(() => {
+    trackSiteVisit();
+  }, [trackSiteVisit]);
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />

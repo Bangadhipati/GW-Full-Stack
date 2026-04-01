@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, Plus, Edit, Trash2, Eye, Users, FileText, X, Save,
+  ArrowLeft, Plus, Edit, Trash2, Eye, EyeOff, Users, FileText, X, Save,
   Megaphone, Image, Link as LinkIcon, Clock, Shield, PenLine, BarChart3,
-  KeyRound, UserPlus, ChevronDown, Upload, Handshake,
+  KeyRound, UserPlus, ChevronDown, Upload, Handshake, Loader2,
 } from "lucide-react";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
+import { uploadImage } from "@/lib/cloudinary";
 import { useAds } from "@/contexts/AdContext";
 import { useAlliances, Alliance } from "@/contexts/AllianceContext";
 import { useBlogs } from "@/contexts/BlogContext";
@@ -13,28 +14,9 @@ import { Ad } from "@/data/ads";
 import { BlogPost, BlogAuthor } from "@/data/blogs";
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/Navbar";
+import api from "@/api";
 
-const compressImage = (file: File, maxWidth = 800, quality = 0.7): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = reject;
-    reader.onload = () => {
-      const img = new window.Image();
-      img.onerror = reject;
-      img.onload = () => {
-        const scale = Math.min(1, maxWidth / img.width);
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
-  });
-
+// Simplified ImageUploadField to purely handle URL input
 interface ImageUploadFieldProps {
   label: string;
   required?: boolean;
@@ -47,45 +29,74 @@ interface ImageUploadFieldProps {
 }
 
 const ImageUploadField = ({ label, required, value, onValueChange, inputClass, labelClass, placeholder, previewClass }: ImageUploadFieldProps) => {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      const compressed = await compressImage(file);
-      onValueChange(compressed);
-    } catch {
-      const reader = new FileReader();
-      reader.onload = () => onValueChange(reader.result as string);
-      reader.readAsDataURL(file);
+
+    if (!file.type.startsWith('image/')) {
+      setError("Please select an image file.");
+      return;
     }
-    e.target.value = "";
+
+    setIsUploading(true);
+    setError(null);
+    try {
+      const url = await uploadImage(file);
+      onValueChange(url);
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      setError(err.message || "Failed to upload image");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
+
   return (
-    <div>
+    <div className="space-y-1.5">
       <label className={labelClass}>
         {label} {required && <span className="text-destructive">*</span>}
       </label>
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={value.startsWith("data:") ? "" : value}
-          onChange={(e) => onValueChange(e.target.value)}
-          placeholder={value.startsWith("data:") ? "File uploaded ✓" : placeholder || "https://example.com/image.jpg"}
-          className={`${inputClass} flex-1`}
-        />
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3 py-2 text-xs font-heading text-muted-foreground hover:border-primary hover:text-primary transition-colors whitespace-nowrap"
-        >
-          <Upload className="h-3.5 w-3.5" /> Upload
-        </button>
-        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onValueChange(e.target.value)}
+            placeholder={placeholder || "https://example.com/image.jpg"}
+            className={`${inputClass} flex-1`}
+          />
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="image/*"
+            className="hidden"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={isUploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="h-10 shrink-0 bg-secondary/80 hover:bg-secondary border border-border"
+          >
+            {isUploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+        {error && <p className="text-[10px] text-destructive font-body">{error}</p>}
       </div>
       {value && (
         <div className={`mt-2 overflow-hidden rounded-lg border border-border ${previewClass || "aspect-video max-h-40"}`}>
-          <img src={value} alt="Preview" className="h-full w-full object-cover" />
+          <img src={`${value.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${value}`} alt="Preview" className="h-full w-full object-cover" />
         </div>
       )}
     </div>
@@ -154,34 +165,50 @@ const ROLE_LABELS: Record<UserRole, { label: string; icon: typeof Shield; color:
 };
 
 const Dashboard = () => {
-  const { user, isAdmin, hasRole, accounts, updatePassword, addAccount, removeAccount, updateAccountRole, updateAccountDetails } = useAuth();
-  const { ads, rotationInterval, addAd, removeAd, updateAd, setRotationInterval } = useAds();
-  const { alliances, addAlliance, updateAlliance, removeAlliance } = useAlliances();
-  const { blogs, addBlog, updateBlog, removeBlog, totalViews } = useBlogs();
+  const { user, isAdmin, hasRole, accounts, userCount, fetchAccounts, updatePassword, addAccount, removeAccount, updateAccountRole, updateAccountDetails } = useAuth();
+  const { ads, rotationInterval, addAd, removeAd, updateAd, setRotationInterval, fetchAds } = useAds();
+  const { alliances, addAlliance, updateAlliance, removeAlliance, fetchAlliances } = useAlliances();
+  const { blogs, addBlog, updateBlog, removeBlog, totalViews, fetchBlogs, fetchTotalViews } = useBlogs();
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
+
+  // Fetch initial data on mount (contexts handle their own initial fetch, but this ensures they are populated)
+  useEffect(() => {
+    fetchBlogs();
+    fetchAds();
+    fetchAlliances();
+    fetchTotalViews();
+    fetchAccounts();
+  }, [fetchBlogs, fetchAds, fetchAlliances, fetchTotalViews, fetchAccounts]);
+
 
   type TabId = "blogs" | "users" | "ads" | "alliances";
   const canAccessBlogs = isAdmin || hasRole("editor");
   const canAccessAds = isAdmin || hasRole("ad_manager");
-  const canAccessUsers = isAdmin;
+  const canAccessUsers = isAdmin; // Only admin can see the full team list
   const canAccessAlliances = isAdmin;
 
-  const defaultTab: TabId = canAccessBlogs ? "blogs" : canAccessAds ? "ads" : "users";
+  const defaultTab: TabId = canAccessBlogs ? "blogs" : canAccessAds ? "ads" : "alliances"; // Adjusted default tab order
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
+
   const [editingBlog, setEditingBlog] = useState<BlogPost | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [showAdEditor, setShowAdEditor] = useState(false);
+  // Adjusted Ad type to use _id for backend interaction, and id for frontend compatibility
   const [editingAd, setEditingAd] = useState<Partial<Ad> & { isNew?: boolean }>({});
+
 
   // Alliance management state
   const [showAllianceEditor, setShowAllianceEditor] = useState(false);
+  // Adjusted Alliance type to use _id for backend interaction, and id for frontend compatibility
   const [editingAlliance, setEditingAlliance] = useState<Partial<Alliance> & { isNew?: boolean }>({});
 
   // User management state
   const [showAddUser, setShowAddUser] = useState(false);
+  const [showNewUserPassword, setShowNewUserPassword] = useState(false);
   const [newUser, setNewUser] = useState({ email: "", name: "", password: "", role: "editor" as UserRole });
   const [editingPassword, setEditingPassword] = useState<string | null>(null);
+  const [showEditUserPassword, setShowEditUserPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [editingDetails, setEditingDetails] = useState<string | null>(null);
@@ -192,72 +219,190 @@ const Dashboard = () => {
   if (!user) return <Navigate to="/" replace />;
 
   // Blog handlers
-  const handleDelete = (id: string) => removeBlog(id);
-  const handleSave = () => {
-    if (!editingBlog) return;
-    const exists = blogs.find((b) => b.id === editingBlog.id);
-    if (exists) updateBlog(editingBlog.id, editingBlog);
-    else addBlog(editingBlog);
-    setShowEditor(false);
-    setEditingBlog(null);
+  const handleDelete = async (id: string) => {
+    const errorMsg = await removeBlog(id);
+    if (errorMsg) setUserError(errorMsg); // Use a general error state or specific for blogs
   };
+  const handleSave = async () => {
+    if (!editingBlog) return;
+    setUserError(""); // Clear previous error
+
+    // Ensure authors array is filtered to only include valid names
+    const validAuthors = editingBlog.authors?.filter(a => a.name.trim()) || [];
+    // Reconstruct the comma-separated author string from the structured authors
+    const authorString = validAuthors.map(a => a.name.trim()).join(", ");
+
+    const blogDataToSend: Omit<BlogPost, "_id" | "id" | "views"> = {
+        title: editingBlog.title,
+        description: editingBlog.description,
+        content: editingBlog.content,
+        thumbnail: editingBlog.thumbnail,
+        date: editingBlog.date,
+        author: authorString, // Ensure this reflects the structured authors
+        authors: validAuthors, // Send the structured authors
+        category: editingBlog.category,
+    };
+
+    let errorMsg: string | null = null;
+    if (editingBlog._id) { // Check for _id from backend
+      errorMsg = await updateBlog(editingBlog._id, blogDataToSend);
+    } else {
+      // For new blogs, _id is not required, and views will be defaulted by backend
+      // Basic validation for new posts:
+      if (!blogDataToSend.title || !blogDataToSend.description || !blogDataToSend.content || !blogDataToSend.thumbnail || !blogDataToSend.date || !blogDataToSend.category || !blogDataToSend.author) {
+          setUserError("Please fill all required fields: Title, Description, Content, Thumbnail, Date, Author, Category.");
+          return;
+      }
+      errorMsg = await addBlog(blogDataToSend);
+    }
+
+    if (errorMsg) {
+      setUserError(errorMsg);
+    } else {
+      setShowEditor(false);
+      setEditingBlog(null);
+    }
+  };
+
+  // Helper to consistently get authors for the editor, from either authors array or author string
+  const getAuthorsForEditor = (blogPost: Partial<BlogPost> | null): BlogAuthor[] => {
+    if (!blogPost) return [];
+    if (blogPost.authors && blogPost.authors.length > 0) {
+      return blogPost.authors;
+    }
+    if (blogPost.author) {
+      const parts = blogPost.author.split(/,\s*|\s+and\s+/).filter(Boolean);
+      return parts.map((name) => ({ name: name.trim(), bio: "" }));
+    }
+    return [];
+  };
+
   const handleNew = () => {
     setEditingBlog({
-      id: `blog-${Date.now()}`,
+      _id: "", // Empty _id signifies a new post
       title: "", description: "", content: "", thumbnail: "",
       date: new Date().toISOString().split("T")[0],
-      author: user.name + " and Team GW", category: "",
+      author: user.name, // This will be overwritten by `authorString` on save.
+      authors: [{ name: user.name, bio: "" }], // Start with current user as first author
+      category: "", views: 0
     });
     setShowEditor(true);
+    setUserError("");
   };
 
   // Ad handlers
   const handleNewAd = () => {
     setEditingAd({ isNew: true, horizontalImageUrl: "", verticalImageUrl: "", link: "", label: "" });
     setShowAdEditor(true);
+    setUserError("");
   };
   const handleEditAd = (ad: Ad) => {
     setEditingAd({ ...ad, isNew: false });
     setShowAdEditor(true);
+    setUserError("");
   };
-  const handleSaveAd = () => {
-    if (!editingAd.horizontalImageUrl || !editingAd.verticalImageUrl) return;
+  const handleSaveAd = async () => {
+    if (!editingAd.horizontalImageUrl || !editingAd.verticalImageUrl) {
+      setUserError("Both horizontal and vertical image URLs are required.");
+      return;
+    }
+    setUserError("");
     const payload = {
       horizontalImageUrl: editingAd.horizontalImageUrl,
       verticalImageUrl: editingAd.verticalImageUrl,
-      link: editingAd.link || undefined,
-      label: editingAd.label || undefined,
+      link: editingAd.link || "",
+      label: editingAd.label || "",
     };
-    if (editingAd.isNew) addAd(payload);
-    else if (editingAd.id) updateAd(editingAd.id, payload);
-    setShowAdEditor(false);
-    setEditingAd({});
+
+    let errorMsg: string | null = null;
+    if (editingAd.isNew) {
+      errorMsg = await addAd(payload);
+    } else if (editingAd._id) { // Use _id for update
+      errorMsg = await updateAd(editingAd._id, payload);
+    }
+
+    if (errorMsg) {
+      setUserError(errorMsg);
+    } else {
+      setShowAdEditor(false);
+      setEditingAd({});
+    }
   };
 
   // User handlers
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     setUserError("");
     if (!newUser.email || !newUser.name || !newUser.password) {
-      setUserError("All fields are required");
+      setUserError("All fields are required.");
       return;
     }
-    const err = addAccount(newUser);
+    const err = await addAccount(newUser);
     if (err) { setUserError(err); return; }
     setShowAddUser(false);
     setNewUser({ email: "", name: "", password: "", role: "editor" });
   };
-  const handlePasswordChange = (email: string) => {
-    const err = updatePassword(email, newPassword);
+  const handlePasswordChange = async (userId: string) => {
+    setUserError("");
+    if (!newPassword || newPassword.length < 4) {
+      setUserError("Password must be at least 4 characters.");
+      return;
+    }
+    const err = await updatePassword("", userId, newPassword); // email is not needed by backend func
     if (err) { setUserError(err); return; }
     setEditingPassword(null);
     setNewPassword("");
-    setUserError("");
   };
-  const handleRoleChange = (email: string, role: UserRole) => {
-    const err = updateAccountRole(email, role);
+  const handleRoleChange = async (userId: string, role: UserRole) => {
+    setUserError("");
+    const err = await updateAccountRole(userId, role);
     if (err) setUserError(err);
     else setEditingRole(null);
   };
+  const handleAccountRemove = async (userId: string) => {
+    setUserError("");
+    const err = await removeAccount(userId);
+    if (err) setUserError(err);
+  };
+  const handleAccountDetailsUpdate = async (userId: string) => {
+    setUserError("");
+    if (!editName.trim() || !editEmail.trim()) {
+      setUserError("Name and Email cannot be empty.");
+      return;
+    }
+    const err = await updateAccountDetails(userId, { name: editName, email: editEmail });
+    if (err) setUserError(err);
+    else setEditingDetails(null);
+  };
+
+
+  // Alliance Handlers
+  const handleSaveAlliance = async () => {
+    if (!editingAlliance.name || !editingAlliance.logo || !editingAlliance.url) {
+      setUserError("Name, Logo URL, and Link URL are required for an alliance.");
+      return;
+    }
+    setUserError("");
+    const payload = {
+      name: editingAlliance.name,
+      logo: editingAlliance.logo,
+      url: editingAlliance.url,
+    };
+
+    let errorMsg: string | null = null;
+    if (editingAlliance.isNew) {
+      errorMsg = await addAlliance(payload);
+    } else if (editingAlliance._id) { // Use _id for update
+      errorMsg = await updateAlliance(editingAlliance._id, payload);
+    }
+
+    if (errorMsg) {
+      setUserError(errorMsg);
+    } else {
+      setShowAllianceEditor(false);
+      setEditingAlliance({});
+    }
+  };
+
 
   const tabs: { id: TabId; label: string; icon: typeof FileText; visible: boolean }[] = [
     { id: "blogs", label: "Blog Posts", icon: FileText, visible: canAccessBlogs },
@@ -306,7 +451,7 @@ const Dashboard = () => {
               </Button>
             )}
             {activeTab === "users" && canAccessUsers && (
-              <Button onClick={() => setShowAddUser(true)} className="gap-2 gradient-red font-heading text-sm tracking-wide">
+              <Button onClick={() => { setShowAddUser(true); setShowNewUserPassword(false); }} className="gap-2 gradient-red font-heading text-sm tracking-wide">
                 <UserPlus className="h-4 w-4" /> Add User
               </Button>
             )}
@@ -318,7 +463,7 @@ const Dashboard = () => {
           {[
             { label: "Total Posts", value: blogs.length, icon: FileText },
             { label: "Active Ads", value: ads.length, icon: Megaphone },
-            { label: "Team Members", value: accounts.length, icon: Users },
+            { label: "Team Members", value: userCount, icon: Users },
             { label: "Total Views", value: formatViews(totalViews), icon: BarChart3 },
           ].map((stat) => (
             <div key={stat.label} className="rounded-xl border border-border bg-card p-3 sm:p-4">
@@ -326,7 +471,14 @@ const Dashboard = () => {
                 <p className="text-xs text-muted-foreground font-body">{stat.label}</p>
                 <stat.icon className="h-4 w-4 text-muted-foreground/50" />
               </div>
-              <p className="mt-1 font-display text-xl font-bold text-primary sm:text-2xl">{stat.value}</p>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <p className="font-display text-xl font-bold text-primary sm:text-2xl">{stat.value}</p>
+                {stat.label === "Total Views" && totalViews >= 1000 && (
+                  <span className="text-[10px] font-body text-muted-foreground/60 tabular-nums" title="Exact view count">
+                    ({totalViews.toLocaleString()})
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -347,6 +499,11 @@ const Dashboard = () => {
           ))}
         </div>
 
+        {/* Error Display */}
+        {userError && (
+          <div className="mb-4 rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive font-body">{userError}</div>
+        )}
+
         {/* === BLOGS TAB === */}
         {activeTab === "blogs" && canAccessBlogs && (
           <div className="space-y-3">
@@ -357,10 +514,10 @@ const Dashboard = () => {
               </div>
             )}
             {blogs.map((blog) => (
-              <div key={blog.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
+              <div key={blog._id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
                 <div className="h-20 w-full flex-shrink-0 overflow-hidden rounded-lg bg-secondary sm:h-16 sm:w-24">
                   {blog.thumbnail ? (
-                    <img src={blog.thumbnail} alt="" className="h-full w-full object-cover" />
+                    <img src={`${blog.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${blog.thumbnail}`} alt="" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full items-center justify-center bg-gradient-to-br from-primary/20 to-secondary">
                       <FileText className="h-5 w-5 text-muted-foreground" />
@@ -371,18 +528,18 @@ const Dashboard = () => {
                   <h3 className="truncate font-heading text-sm font-bold text-foreground sm:text-base">{blog.title || "Untitled"}</h3>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                     <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{blog.category || "Uncategorized"}</span>
-                    <span>{blog.date}</span>
-                    <span>{blog.author}</span>
+                    <span>{new Date(blog.date).toLocaleDateString()}</span>
+                    <span>{blog.authors?.map(a => a.name).join(', ') || blog.author || 'Unknown Author'}</span>
                   </div>
                 </div>
                 <div className="flex gap-1.5 sm:flex-shrink-0">
-                  <Link to={`/blog/${blog.id}`} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                  <Link to={`/blog/${blog._id}`} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                     <Eye className="h-3.5 w-3.5" />
                   </Link>
-                  <button onClick={() => { setEditingBlog({ ...blog }); setShowEditor(true); }} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                  <button onClick={() => { setEditingBlog({ ...blog, authors: getAuthorsForEditor(blog) }); setShowEditor(true); }} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                     <Edit className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={() => handleDelete(blog.id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
+                  <button onClick={() => handleDelete(blog._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -415,9 +572,9 @@ const Dashboard = () => {
                 </div>
               )}
               {ads.map((ad) => (
-                <div key={ad.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
+                <div key={ad._id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
                   <div className="h-20 w-full flex-shrink-0 overflow-hidden rounded-lg bg-secondary sm:h-16 sm:w-24">
-                    <img src={ad.horizontalImageUrl} alt={ad.label || "Ad"} className="h-full w-full object-cover" />
+                    <img src={`${ad.horizontalImageUrl.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${ad.horizontalImageUrl}`} alt={ad.label || "Ad"} className="h-full w-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="truncate font-heading text-sm font-bold text-foreground sm:text-base">{ad.label || "Untitled Ad"}</h3>
@@ -430,7 +587,7 @@ const Dashboard = () => {
                     <button onClick={() => handleEditAd(ad)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                       <Edit className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => removeAd(ad.id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
+                    <button onClick={() => removeAd(ad._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -450,10 +607,10 @@ const Dashboard = () => {
               </div>
             )}
             {alliances.map((alliance) => (
-              <div key={alliance.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
+              <div key={alliance._id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
                 <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-secondary flex items-center justify-center">
                   {alliance.logo ? (
-                    <img src={alliance.logo} alt={alliance.name} className="h-full w-full object-contain p-1" />
+                    <img src={`${alliance.logo.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${alliance.logo}`} alt={alliance.name} className="h-full w-full object-contain p-1" />
                   ) : (
                     <Handshake className="h-5 w-5 text-muted-foreground" />
                   )}
@@ -475,7 +632,7 @@ const Dashboard = () => {
                   <button onClick={() => { setEditingAlliance({ ...alliance, isNew: false }); setShowAllianceEditor(true); }} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                     <Edit className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={() => removeAlliance(alliance.id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
+                  <button onClick={() => removeAlliance(alliance._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -487,20 +644,17 @@ const Dashboard = () => {
         {/* === USERS TAB === */}
         {activeTab === "users" && canAccessUsers && (
           <div className="space-y-3">
-            {userError && (
-              <div className="rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive font-body">{userError}</div>
-            )}
             {accounts.map((acc) => {
               const roleInfo = ROLE_LABELS[acc.role];
               const RoleIcon = roleInfo.icon;
               return (
-                <div key={acc.email} className="rounded-xl border border-border bg-card p-3 sm:p-4">
+                <div key={acc._id} className="rounded-xl border border-border bg-card p-3 sm:p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                     <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/20 font-heading text-sm font-bold text-primary">
                       {acc.name.charAt(0)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      {editingDetails === acc.email ? (
+                      {isAdmin && editingDetails === acc._id ? (
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center gap-1.5">
                             <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
@@ -511,12 +665,7 @@ const Dashboard = () => {
                               className="w-full rounded-md border border-border bg-secondary/50 px-2 py-1 text-[11px] text-muted-foreground focus:border-primary focus:outline-none" />
                           </div>
                           <div className="flex items-center gap-1">
-                            <button onClick={() => {
-                              setUserError("");
-                              const err = updateAccountDetails(acc.email, { name: editName, email: editEmail });
-                              if (err) setUserError(err);
-                              else setEditingDetails(null);
-                            }} className="rounded-md bg-primary/20 px-2 py-1 text-xs text-primary hover:bg-primary/30">
+                            <button onClick={() => handleAccountDetailsUpdate(acc._id)} className="rounded-md bg-primary/20 px-2 py-1 text-xs text-primary hover:bg-primary/30">
                               <Save className="h-3 w-3" />
                             </button>
                             <button onClick={() => setEditingDetails(null)} className="text-muted-foreground hover:text-foreground">
@@ -530,18 +679,20 @@ const Dashboard = () => {
                             <p className="truncate font-heading text-sm font-semibold text-foreground">{acc.name}</p>
                             <p className="text-[11px] text-muted-foreground">{acc.email}</p>
                           </div>
-                          <button onClick={() => { setEditingDetails(acc.email); setEditName(acc.name); setEditEmail(acc.email); setUserError(""); }}
-                            className="flex-shrink-0 rounded-md p-1 text-muted-foreground/50 hover:text-primary transition-colors">
-                            <Edit className="h-3.5 w-3.5" />
-                          </button>
+                          {isAdmin && (
+                            <button onClick={() => { setEditingDetails(acc._id); setEditName(acc.name); setEditEmail(acc.email); setUserError(""); }}
+                              className="flex-shrink-0 rounded-md p-1 text-muted-foreground/50 hover:text-primary transition-colors">
+                              <Edit className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      {editingRole === acc.email ? (
+                      {isAdmin && editingRole === acc._id ? (
                         <div className="flex items-center gap-1">
                           {(["admin", "editor", "ad_manager"] as UserRole[]).map((r) => (
-                            <button key={r} onClick={() => handleRoleChange(acc.email, r)}
+                            <button key={r} onClick={() => handleRoleChange(acc._id, r)}
                               className={`rounded-md px-2 py-1 text-[10px] font-heading font-semibold transition-all ${
                                 acc.role === r ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:bg-primary/20"
                               }`}
@@ -555,37 +706,51 @@ const Dashboard = () => {
                         </div>
                       ) : (
                         <button
-                          onClick={() => acc.email.toLowerCase() !== "bangadhipati@gmail.com" && setEditingRole(acc.email)}
+                          onClick={() => isAdmin && acc.email.toLowerCase() !== "bangadhipati@gmail.com" && setEditingRole(acc._id)}
                           className={`flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-heading font-semibold ${roleInfo.color} ${
-                            acc.email.toLowerCase() !== "bangadhipati@gmail.com" ? "cursor-pointer hover:bg-primary/20" : ""
+                            isAdmin && acc.email.toLowerCase() !== "bangadhipati@gmail.com" ? "cursor-pointer hover:bg-primary/20" : ""
                           }`}
                         >
                           <RoleIcon className="h-3 w-3" />
                           {roleInfo.label}
-                          {acc.email.toLowerCase() !== "bangadhipati@gmail.com" && <ChevronDown className="h-3 w-3" />}
+                          {isAdmin && acc.email.toLowerCase() !== "bangadhipati@gmail.com" && <ChevronDown className="h-3 w-3" />}
                         </button>
                       )}
 
-                      {editingPassword === acc.email ? (
+                      {isAdmin && editingPassword === acc._id ? (
                         <div className="flex items-center gap-1">
-                          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
-                            placeholder="New password" className="w-28 rounded-md border border-border bg-secondary/50 px-2 py-1 text-xs font-body text-foreground focus:border-primary focus:outline-none" />
-                          <button onClick={() => handlePasswordChange(acc.email)} className="rounded-md bg-primary/20 px-2 py-1 text-xs text-primary hover:bg-primary/30">
+                          <div className="relative">
+                            <input
+                              type={showEditUserPassword ? "text" : "password"}
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              placeholder="New password"
+                              className="w-32 rounded-md border border-border bg-secondary/50 pl-2 pr-8 py-1 text-xs font-body text-foreground focus:border-primary focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowEditUserPassword(!showEditUserPassword)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              {showEditUserPassword ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </button>
+                          </div>
+                          <button onClick={() => handlePasswordChange(acc._id)} className="rounded-md bg-primary/20 px-2 py-1 text-xs text-primary hover:bg-primary/30">
                             <Save className="h-3 w-3" />
                           </button>
-                          <button onClick={() => { setEditingPassword(null); setNewPassword(""); }} className="text-muted-foreground hover:text-foreground">
+                          <button onClick={() => { setEditingPassword(null); setNewPassword(""); setShowEditUserPassword(false); }} className="text-muted-foreground hover:text-foreground">
                             <X className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                      ) : (
-                        <button onClick={() => { setEditingPassword(acc.email); setNewPassword(""); setUserError(""); }}
+                      ) : isAdmin && (
+                        <button onClick={() => { setEditingPassword(acc._id); setNewPassword(""); setShowEditUserPassword(false); setUserError(""); }}
                           className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                           <KeyRound className="h-3 w-3" /> Password
                         </button>
                       )}
 
-                      {acc.email.toLowerCase() !== "bangadhipati@gmail.com" && (
-                        <button onClick={() => removeAccount(acc.email)}
+                      {isAdmin && acc.email.toLowerCase() !== "bangadhipati@gmail.com" && (
+                        <button onClick={() => handleAccountRemove(acc._id)}
                           className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -605,7 +770,7 @@ const Dashboard = () => {
           <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-card" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6">
               <h2 className="font-display text-lg font-bold text-primary">
-                {editingBlog.title ? "Edit Post" : "New Post"}
+                {editingBlog._id ? "Edit Post" : "New Post"}
               </h2>
               <button onClick={() => { setShowEditor(false); setEditingBlog(null); }} className="rounded-full p-1 text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
@@ -635,18 +800,15 @@ const Dashboard = () => {
                 <div>
                   <label className={labelClass}>Authors</label>
                   <div className="space-y-3">
-                    {(editingBlog.authors && editingBlog.authors.length > 0
-                      ? editingBlog.authors
-                      : [{ name: editingBlog.author || "", bio: "" }]
-                    ).map((author, idx) => (
+                    {getAuthorsForEditor(editingBlog).map((author, idx) => (
                       <div key={idx} className="rounded-lg border border-border bg-secondary/30 p-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="font-heading text-[10px] tracking-wider text-muted-foreground uppercase">Author {idx + 1}</span>
                           {(editingBlog.authors?.length || 1) > 1 && (
                             <button
                               type="button"
-                              onClick={() => {
-                                const updated = [...(editingBlog.authors || [])];
+                              onClick={() => { // Ensure authors is always an array for operations
+                                const updated = [...getAuthorsForEditor(editingBlog)];
                                 updated.splice(idx, 1);
                                 setEditingBlog({
                                   ...editingBlog,
@@ -664,7 +826,7 @@ const Dashboard = () => {
                           type="text"
                           value={author.name}
                           onChange={(e) => {
-                            const updated = [...(editingBlog.authors || [{ name: editingBlog.author || "", bio: "" }])];
+                            const updated = [...getAuthorsForEditor(editingBlog)];
                             updated[idx] = { ...updated[idx], name: e.target.value };
                             setEditingBlog({
                               ...editingBlog,
@@ -677,9 +839,9 @@ const Dashboard = () => {
                         />
                         <input
                           type="text"
-                          value={author.bio}
+                          value={author.bio || ""}
                           onChange={(e) => {
-                            const updated = [...(editingBlog.authors || [{ name: editingBlog.author || "", bio: "" }])];
+                            const updated = [...getAuthorsForEditor(editingBlog)];
                             updated[idx] = { ...updated[idx], bio: e.target.value };
                             setEditingBlog({ ...editingBlog, authors: updated });
                           }}
@@ -691,9 +853,7 @@ const Dashboard = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        const current = editingBlog.authors && editingBlog.authors.length > 0
-                          ? editingBlog.authors
-                          : [{ name: editingBlog.author || "", bio: "" }];
+                        const current = getAuthorsForEditor(editingBlog);
                         setEditingBlog({
                           ...editingBlog,
                           authors: [...current, { name: "", bio: "" }],
@@ -792,7 +952,6 @@ const Dashboard = () => {
               <X className="h-4 w-4" />
             </button>
             <h2 className="mb-4 font-display text-lg font-bold text-primary">Add User</h2>
-            {userError && <p className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive font-body">{userError}</p>}
             <div className="space-y-3">
               <div>
                 <label className={labelClass}>Name</label>
@@ -804,7 +963,21 @@ const Dashboard = () => {
               </div>
               <div>
                 <label className={labelClass}>Password</label>
-                <input type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className={inputClass} />
+                <div className="relative">
+                  <input
+                    type={showNewUserPassword ? "text" : "password"}
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    className={`${inputClass} pr-10`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewUserPassword(!showNewUserPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showNewUserPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className={labelClass}>Role</label>
@@ -863,17 +1036,8 @@ const Dashboard = () => {
             <div className="flex justify-end gap-2 border-t border-border px-4 py-3 sm:px-6">
               <Button variant="outline" onClick={() => { setShowAllianceEditor(false); setEditingAlliance({}); }} className="font-heading text-sm">Cancel</Button>
               <Button
-                onClick={() => {
-                  if (!editingAlliance.name || !editingAlliance.logo) return;
-                  if (editingAlliance.isNew) {
-                    addAlliance({ name: editingAlliance.name, logo: editingAlliance.logo, url: editingAlliance.url || "#" });
-                  } else if (editingAlliance.id) {
-                    updateAlliance(editingAlliance.id, { name: editingAlliance.name, logo: editingAlliance.logo, url: editingAlliance.url || "#" });
-                  }
-                  setShowAllianceEditor(false);
-                  setEditingAlliance({});
-                }}
-                disabled={!editingAlliance.name || !editingAlliance.logo}
+                onClick={handleSaveAlliance}
+                disabled={!editingAlliance.name || !editingAlliance.logo || !editingAlliance.url}
                 className="gradient-red font-heading text-sm tracking-wide"
               >
                 <Save className="mr-2 h-4 w-4" /> Save Alliance

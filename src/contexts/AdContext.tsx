@@ -1,20 +1,26 @@
-import { createContext, useContext, useState, ReactNode, useEffect } from "react";
-import { Ad, DEFAULT_ADS } from "@/data/ads";
+import { createContext, useContext, useState, ReactNode, useEffect, useCallback } from "react";
+import { Ad as ClientAd, DEFAULT_ADS } from "@/data/ads"; // Renamed to ClientAd
+import api from '../api';
+import { useAuth } from './AuthContext'; // Import useAuth to get the token
+
+// The Ad interface from API matches the client's Ad interface now
+interface Ad extends ClientAd {
+  _id: string; // MongoDB _id
+}
 
 interface AdContextType {
   ads: Ad[];
-  rotationInterval: number;
-  addAd: (ad: Omit<Ad, "id">) => void;
-  removeAd: (id: string) => void;
-  updateAd: (id: string, updates: Partial<Ad>) => void;
+  rotationInterval: number; // Still client-side managed for now
+  addAd: (ad: Omit<Ad, "id" | "_id">) => Promise<string | null>;
+  removeAd: (id: string) => Promise<string | null>;
+  updateAd: (id: string, updates: Partial<Omit<Ad, "id" | "_id">>) => Promise<string | null>;
   setRotationInterval: (seconds: number) => void;
+  loading: boolean;
+  error: string | null;
+  fetchAds: () => Promise<void>;
 }
 
-const STORAGE_KEY = "gw-ads";
-const INTERVAL_KEY = "gw-ad-interval";
-const VERSION_KEY = "gw-ads-version";
-// Auto-detects any change to DEFAULT_ADS content
-const ADS_VERSION = JSON.stringify(DEFAULT_ADS);
+const INTERVAL_KEY = "gw-ad-interval"; // This remains client-side for rotation speed
 
 const AdContext = createContext<AdContextType | null>(null);
 
@@ -25,25 +31,10 @@ export const useAds = () => {
 };
 
 export const AdProvider = ({ children }: { children: ReactNode }) => {
-  const [ads, setAds] = useState<Ad[]>(() => {
-    try {
-      const storedVersion = localStorage.getItem(VERSION_KEY);
-      // If code-level defaults changed, discard cached ads
-      if (String(ADS_VERSION) !== storedVersion) {
-        localStorage.setItem(VERSION_KEY, String(ADS_VERSION));
-        localStorage.removeItem(STORAGE_KEY);
-        return DEFAULT_ADS;
-      }
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-      return DEFAULT_ADS;
-    } catch {
-      return DEFAULT_ADS;
-    }
-  });
+  const { token } = useAuth(); // Get token from AuthContext
+  const [ads, setAds] = useState<Ad[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [rotationInterval, setRotationIntervalState] = useState(() => {
     try {
@@ -54,32 +45,73 @@ export const AdProvider = ({ children }: { children: ReactNode }) => {
     }
   });
 
-  useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ads)); } catch { /* quota exceeded – skip persist */ }
-  }, [ads]);
-
+  // Persist rotation interval
   useEffect(() => {
     localStorage.setItem(INTERVAL_KEY, String(rotationInterval));
   }, [rotationInterval]);
 
-  const addAd = (ad: Omit<Ad, "id">) => {
-    setAds((prev) => [...prev, { ...ad, id: `ad-${Date.now()}` }]);
-  };
+  const fetchAds = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const fetchedAds = await api.getAds();
+      // Map _id to id for existing frontend components expecting `id`
+      setAds(fetchedAds.map(ad => ({ ...ad, id: ad._id })));
+    } catch (err: any) {
+      console.error("Failed to fetch ads:", err);
+      setError(err.message || "Failed to load ads");
+      setAds(DEFAULT_ADS.map(ad => ({...ad, _id: ad.id || `temp-${Date.now()}`}))); // Fallback to default if API fails
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const removeAd = (id: string) => {
-    setAds((prev) => prev.filter((a) => a.id !== id));
-  };
+  useEffect(() => {
+    fetchAds();
+  }, [fetchAds]); // Fetch ads on component mount
 
-  const updateAd = (id: string, updates: Partial<Ad>) => {
-    setAds((prev) => prev.map((a) => (a.id === id ? { ...a, ...updates } : a)));
-  };
+  const addAd = useCallback(async (ad: Omit<Ad, "id" | "_id">): Promise<string | null> => {
+    if (!token) return "Authentication required to add an ad.";
+    try {
+      await api.createAd(ad, token);
+      await fetchAds(); // Re-fetch to get the new ad from the backend
+      return null;
+    } catch (err: any) {
+      console.error("Failed to add ad:", err);
+      return err.message || "Failed to add ad";
+    }
+  }, [token, fetchAds]);
+
+  const removeAd = useCallback(async (id: string): Promise<string | null> => {
+    if (!token) return "Authentication required to remove an ad.";
+    try {
+      await api.deleteAd(id, token);
+      await fetchAds(); // Re-fetch ads
+      return null;
+    } catch (err: any) {
+      console.error("Failed to remove ad:", err);
+      return err.message || "Failed to remove ad";
+    }
+  }, [token, fetchAds]);
+
+  const updateAd = useCallback(async (id: string, updates: Partial<Omit<Ad, "id" | "_id">>): Promise<string | null> => {
+    if (!token) return "Authentication required to update an ad.";
+    try {
+      await api.updateAd(id, updates, token);
+      await fetchAds(); // Re-fetch ads
+      return null;
+    } catch (err: any) {
+      console.error("Failed to update ad:", err);
+      return err.message || "Failed to update ad";
+    }
+  }, [token, fetchAds]);
 
   const setRotationInterval = (seconds: number) => {
     setRotationIntervalState(Math.max(1, seconds));
   };
 
   return (
-    <AdContext.Provider value={{ ads, rotationInterval, addAd, removeAd, updateAd, setRotationInterval }}>
+    <AdContext.Provider value={{ ads, rotationInterval, addAd, removeAd, updateAd, setRotationInterval, loading, error, fetchAds }}>
       {children}
     </AdContext.Provider>
   );

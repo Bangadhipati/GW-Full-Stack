@@ -1,5 +1,6 @@
 import heroBanner from "@/assets/bishnupur-temples.webp";
 import { useAlliances } from "@/contexts/AllianceContext";
+import api from "@/api";
 
 const HeroBanner = () => {
   const { alliances } = useAlliances();
@@ -11,7 +12,7 @@ const HeroBanner = () => {
       className="flex shrink-0 items-center gap-2.5 transition-opacity hover:opacity-100 opacity-70 sm:gap-3 mx-5 sm:mx-8"
     >
       <img
-        src={alliance.logo}
+        src={`${alliance.logo.startsWith("http") ? "" : api.API_STATIC_BASE_URL}${alliance.logo}`}
         alt={alliance.name}
         className="h-8 w-auto rounded-sm object-contain sm:h-10"
       />
@@ -28,6 +29,8 @@ const HeroBanner = () => {
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: `url(${heroBanner})` }}
       />
+      {/* Hidden preloader for LCP background image optimization */}
+      <img src={heroBanner} className="sr-only" aria-hidden="true" fetchpriority="high" />
 
       {/* Semi-transparent professional overlay */}
       <div className="absolute inset-0 bg-background/50" />
