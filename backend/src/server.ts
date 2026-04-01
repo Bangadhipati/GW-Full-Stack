@@ -16,13 +16,26 @@ connectDB();
 
 const app = express();
 
-const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
-const corsOptions = {
-  origin: [frontendUrl],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+const allowedOrigins = [
+  'http://localhost:8080',
+  'http://localhost:5173',
+  'https://gaudiyawarriors.netlify.app',
+  process.env.FRONTEND_URL
+].filter(Boolean) as string[];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-};
-app.use(cors(corsOptions));
+  credentials: true,
+}));
 
 app.use(express.json());
 
