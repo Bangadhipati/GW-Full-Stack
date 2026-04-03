@@ -1,12 +1,84 @@
-import { Loader2, RefreshCcw, WifiOff } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Loader2, RefreshCcw, WifiOff, Swords, Shield, Target, Trophy } from "lucide-react";
 import { Button } from "./ui/button";
 
+const TRAINING_MESSAGES = [
+  "Steady your breath...",
+  "The blade is an extension of the soul.",
+  "Focus on the target.",
+  "Your spirit is awakening.",
+  "Strength comes through perseverance.",
+  "Victory favors the disciplined.",
+  "The heritage lives within you.",
+  "A warrior never yields.",
+  "Gauda's glory shall return.",
+  "Unlocking the warrior within..."
+];
+
 const ServerOfflineOverlay = () => {
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [score, setScore] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [isGameActive, setIsGameActive] = useState(false);
+  const [trainingMsg, setTrainingMsg] = useState(TRAINING_MESSAGES[0]);
+  const [targetPos, setTargetPos] = useState({ x: 50, y: 50 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (score > 0 && score % 10 === 0) {
+      setLevel(prev => Math.floor(score / 10) + 1);
+      setTrainingMsg(TRAINING_MESSAGES[Math.floor(Math.random() * TRAINING_MESSAGES.length)]);
+    }
+  }, [score]);
+
+  const handleTargetClick = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    setScore(prev => prev + 1);
+    
+    // Move target randomly within safe bounds
+    setTargetPos({
+      x: Math.max(15, Math.min(85, Math.random() * 100)),
+      y: Math.max(25, Math.min(75, Math.random() * 100))
+    });
+  };
+
+  const handleHardRefresh = useCallback(() => {
+    setIsRetrying(true);
+    // Clear storage to ensure fresh state and bypass potential stale data/auth loops
+    sessionStorage.clear();
+    localStorage.clear();
+    
+    // Perform a hard reload with a cache-busting timestamp
+    const url = new URL(window.location.href);
+    url.searchParams.set("retry_at", Date.now().toString());
+    window.location.href = url.toString();
+  }, []);
+
+  useEffect(() => {
+    const checkServerStatus = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_BACKEND_URL?.replace('/api', '') || 'http://localhost:5000';
+        // Use a lightweight check to see if the server is responsive
+        const response = await fetch(baseUrl, { mode: 'no-cors' });
+        
+        // If we get any response (even opaque due to no-cors), the server is up
+        handleHardRefresh();
+      } catch (err) {
+        // Still unreachable
+      }
+    };
+
+    // Auto-check connection every 15 seconds to catch Render spin-up automatically
+    const interval = setInterval(checkServerStatus, 15000);
+    return () => clearInterval(interval);
+  }, [handleHardRefresh]);
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background p-4 text-center">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background p-4 text-center overflow-hidden">
       <div className="absolute inset-0 bg-grid-pattern opacity-10" />
       
-      <div className="relative max-w-md animate-fade-in px-6">
+      {!isGameActive ? (
+        <div className="relative max-w-md animate-fade-in px-6">
         {/* Glow Background */}
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
         
@@ -44,15 +116,28 @@ const ServerOfflineOverlay = () => {
                 "Patience is the strength of the soul; wait for the revival."
               </p>
 
-              <div className="flex flex-col gap-8 justify-center">
-                <div className="flex justify-center">
+              <div className="flex flex-col gap-6 justify-center">
+                <div className="flex flex-col gap-3">
                   <Button 
-                    onClick={() => window.location.reload()} 
-                    className="gradient-red w-full sm:w-auto gap-2 font-heading px-12 py-6 text-base shadow-lg hover:glow-red transition-all"
+                    onClick={handleHardRefresh}
+                    disabled={isRetrying}
+                    className="gradient-red w-full gap-2 font-heading py-6 text-base shadow-lg hover:glow-red transition-all"
                   >
-                    <RefreshCcw className="h-5 w-5" />
-                    Try Again
+                    {isRetrying ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="h-5 w-5" />
+                    )}
+                    {isRetrying ? "Synchronizing..." : "Try Connection"}
                   </Button>
+                  
+                  <button 
+                    onClick={() => setIsGameActive(true)}
+                    className="group flex items-center justify-center gap-2 rounded-lg border border-border bg-secondary/30 py-3 font-heading text-xs font-bold tracking-widest text-muted-foreground transition-all hover:border-primary/40 hover:text-primary"
+                  >
+                    <Swords className="h-3.5 w-3.5 transition-transform group-hover:rotate-12" />
+                    COMMENCE WARRIOR TRAINING
+                  </button>
                 </div>
 
                 <div className="space-y-4">
@@ -65,7 +150,7 @@ const ServerOfflineOverlay = () => {
                   </div>
                   
                   <div className="flex justify-center gap-4">
-                    <a href="https://x.com/gaudiyawarriors" target="_blank" rel="noopener noreferrer" className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary/30 transition-all hover:border-primary hover:text-primary hover:glow-red" title="X (Twitter)">
+                    <a href="https://x.com/Gaudeshwar" target="_blank" rel="noopener noreferrer" className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary/30 transition-all hover:border-primary hover:text-primary hover:glow-red" title="X (Twitter)">
                       <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
                         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                       </svg>
@@ -86,12 +171,71 @@ const ServerOfflineOverlay = () => {
                       </svg>
                     </a>
                   </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div ref={containerRef} className="relative h-full w-full max-w-4xl animate-fade-in flex flex-col items-center justify-between py-12">
+          {/* Game UI Header */}
+          <div className="z-10 space-y-2">
+            <div className="flex items-center justify-center gap-4">
+              <div className="rounded-lg border border-border bg-card/50 px-4 py-2 backdrop-blur-md">
+                <p className="font-heading text-[10px] tracking-widest text-muted-foreground uppercase">Warrior Rank</p>
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-primary" />
+                  <p className="font-display text-xl font-bold text-foreground">LVL {level}</p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-border bg-card/50 px-4 py-2 backdrop-blur-md">
+                <p className="font-heading text-[10px] tracking-widest text-muted-foreground uppercase">Spirit Strength</p>
+                <div className="flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-yellow-500" />
+                  <p className="font-display text-xl font-bold text-foreground">{score}</p>
+                </div>
+              </div>
+            </div>
+            <p className="font-body text-sm text-primary text-glow italic animate-pulse min-h-[1.5em]">{trainingMsg}</p>
+          </div>
+
+          {/* Game Area */}
+          <div className="absolute inset-0 z-0">
+            <div 
+              className="absolute h-20 w-20 sm:h-24 sm:w-24 -translate-x-1/2 -translate-y-1/2 cursor-crosshair transition-all duration-300 ease-out md:duration-200"
+              style={{ left: `${targetPos.x}%`, top: `${targetPos.y}%` }}
+              onClick={handleTargetClick}
+              onTouchStart={handleTargetClick}
+            >
+              <div className="relative h-full w-full">
+                <div className="absolute inset-0 rounded-full border-2 border-primary/40 animate-ping" />
+                <div className="absolute inset-2 rounded-full border-2 border-primary/60" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Target className="h-10 w-10 sm:h-12 sm:w-12 text-primary drop-shadow-[0_0_10px_rgba(255,0,0,0.5)]" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Game Footer */}
+          <div className="z-10 w-full max-w-xs space-y-4">
+            <div className="flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-2">
+              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              <span className="font-heading text-[10px] font-bold tracking-[0.2em] text-foreground uppercase">
+                Server Re-link in progress...
+              </span>
+            </div>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsGameActive(false)}
+              className="w-full border-border hover:bg-secondary text-muted-foreground font-heading text-xs tracking-widest"
+            >
+              ABANDON TRAINING
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

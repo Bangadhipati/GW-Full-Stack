@@ -5,18 +5,18 @@
  * Compresses and resizes an image file client-side using Canvas.
  * Aims to reduce file size while maintaining visual quality by:
  * 1. Resizing to fit within specified maximum dimensions (maintains aspect ratio).
- * 2. Compressing to a specified JPEG quality.
+ * 2. Converting to PNG to preserve transparency (essential for background-removed images).
  * @param imageFile The original image file (e.g., from an input event).
  * @param maxWidth Maximum width for the output image.
  * @param maxHeight Maximum height for the output image.
- * @param quality JPEG compression quality (0.0 to 1.0).
+ * @param quality Parameter kept for signature compatibility; ignored for PNG.
  * @returns A Promise that resolves with the processed image as a new File object.
  */
 export const compressImage = (
   imageFile: File,
   maxWidth: number = 1920,
   maxHeight: number = 1920,
-  quality: number = 0.8
+  _quality: number = 0.8
 ): Promise<File> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -52,21 +52,21 @@ export const compressImage = (
         }
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Convert canvas to Blob (JPEG format for better size control)
+        // Convert canvas to Blob (PNG format to preserve transparency)
         canvas.toBlob(
           (blob) => {
             if (!blob) {
               return reject(new Error("Canvas toBlob failed."));
             }
-            // Create a new File object from the compressed Blob
-            const compressedFile = new File([blob], imageFile.name, {
-              type: "image/jpeg",
+            // Create a new File object from the processed Blob, ensuring .png extension
+            const fileName = imageFile.name.replace(/\.[^/.]+$/, "") + ".png";
+            const processedFile = new File([blob], fileName, {
+              type: "image/png",
               lastModified: Date.now(),
             });
-            resolve(compressedFile);
+            resolve(processedFile);
           },
-          "image/jpeg",
-          quality
+          "image/png"
         );
       };
 

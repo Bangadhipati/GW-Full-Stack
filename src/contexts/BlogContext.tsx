@@ -73,11 +73,19 @@ export const BlogProvider = ({ children }: { children: ReactNode }) => {
     try {
       const data = await api.getTotalBlogViews();
       setTotalViews(data.totalViews);
+      // Clear connectivity error if we successfully reached the server
+      if (error === "Connection lost to server") {
+        setError(null);
+      }
     } catch (err: any) {
-      console.error("Failed to fetch total views:", err);
-      setTotalViews(prev => prev || 0);
+      console.error("Connectivity check failed:", err);
+      // If it looks like a network level failure (e.g. TypeError: Failed to fetch), 
+      // set the special error message that triggers the overlay.
+      if (!err.status && (!err.message || err.message.toLowerCase().includes("fetch") || err.message.toLowerCase().includes("network"))) {
+        setError("Connection lost to server");
+      }
     }
-  }, []);
+  }, [error]);
 
   const trackSiteVisit = useCallback(async () => {
     try {
@@ -95,13 +103,14 @@ export const BlogProvider = ({ children }: { children: ReactNode }) => {
   const getBlogById = useCallback(async (id: string): Promise<BlogPost | undefined> => {
     try {
       const blog = await api.getBlogPost(id);
+      if (error === "Connection lost to server") setError(null);
       return { ...blog, id: blog._id };
     } catch (err: any) {
       console.error(`Failed to fetch blog post with ID ${id}:`, err);
       setError(err.message || "Failed to load blog post");
       return undefined;
     }
-  }, []);
+  }, [error]);
 
 
   useEffect(() => {
@@ -109,13 +118,11 @@ export const BlogProvider = ({ children }: { children: ReactNode }) => {
     fetchTotalViews();
   }, [fetchBlogs, fetchTotalViews]);
 
-  // Poll for total views to keep dashboard updated in real-time
-  // Only poll if we aren't currently seeing connection errors to avoid flooding console
+  // Background health check and stats updates - ensures offline status is detected while browsing
   useEffect(() => {
-    if (error) return;
-    const interval = setInterval(fetchTotalViews, 10000); // Increased interval slightly
+    const interval = setInterval(fetchTotalViews, 15000);
     return () => clearInterval(interval);
-  }, [fetchTotalViews, error]);
+  }, [fetchTotalViews]);
 
 
   const addBlog = useCallback(async (blog: Omit<BlogPost, "id" | "_id" | "views">): Promise<string | null> => {

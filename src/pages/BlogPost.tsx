@@ -51,7 +51,7 @@ const ShareButton = ({ className = "" }: { className?: string }) => {
 const BlogPostPage = () => { // Renamed to BlogPostPage
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { blogs, getBlogById, fetchBlogs, fetchTotalViews } = useBlogs();
+  const { blogs, getBlogById, fetchBlogs, fetchTotalViews, error: contextError } = useBlogs();
   const [blog, setBlog] = useState<BlogPost | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,15 +124,18 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
+    // Automatic offline detection using context error, or local error on first load
     if (loading && !blog) {
       timer = setTimeout(() => setShowOverlay(true), 6000);
+    } else if (contextError === "Connection lost to server") {
+      setShowOverlay(true);
     } else if (error && !blog) {
       setShowOverlay(true);
     } else {
       setShowOverlay(false);
     }
     return () => clearTimeout(timer);
-  }, [loading, error, blog]);
+  }, [loading, error, contextError, blog]);
 
   if (showOverlay) return <ServerOfflineOverlay />;
 

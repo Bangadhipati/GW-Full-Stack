@@ -4,7 +4,8 @@ import {
   ArrowLeft, Plus, Edit, Trash2, Eye, EyeOff, Users, FileText, X, Save,
   Megaphone, Image, Link as LinkIcon, Clock, Shield, PenLine, BarChart3,
   KeyRound, UserPlus, ChevronDown, Upload, Handshake, Loader2,
-  Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Code, Minus, SquareCode
+  Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Code, Minus, SquareCode,
+  Undo, Redo
 } from "lucide-react";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { uploadImage } from "@/lib/cloudinary";
@@ -16,6 +17,7 @@ import { Ad } from "@/data/ads";
 import { BlogPost, BlogAuthor } from "@/data/blogs";
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/Navbar";
+import ServerOfflineOverlay from "@/components/ServerOfflineOverlay";
 import api from "@/api";
 
 // ImageUploadField to purely handle URL input
@@ -210,9 +212,11 @@ const Dashboard = () => {
   const { user, isAdmin, hasRole, accounts, userCount, fetchAccounts, updatePassword, addAccount, removeAccount, updateAccountRole, updateAccountDetails } = useAuth();
   const { ads, rotationInterval, addAd, removeAd, updateAd, setRotationInterval, fetchAds } = useAds();
   const { alliances, addAlliance, updateAlliance, removeAlliance, fetchAlliances } = useAlliances();
-  const { blogs, addBlog, updateBlog, removeBlog, totalViews, fetchBlogs, fetchTotalViews } = useBlogs();
+  const { blogs, addBlog, updateBlog, removeBlog, totalViews, fetchBlogs, fetchTotalViews, error: contextError } = useBlogs();
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
+
+  if (contextError === "Connection lost to server") return <ServerOfflineOverlay />;
 
   // Fetch initial data on mount (contexts handle their own initial fetch, but this ensures they are populated)
   useEffect(() => {
@@ -236,6 +240,8 @@ const Dashboard = () => {
   const [editingBlog, setEditingBlog] = useState<BlogPost | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [isSavingBlog, setIsSavingBlog] = useState(false);
+  const [history, setHistory] = useState<{ stack: string[], index: number }>({ stack: [], index: -1 });
+  const historyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isUploadingContentImage, setIsUploadingContentImage] = useState(false);
   const contentImageInputRef = useRef<HTMLInputElement>(null);
   const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -271,6 +277,40 @@ const Dashboard = () => {
   const handleDelete = async (id: string) => {
     const errorMsg = await removeBlog(id);
     if (errorMsg) setUserError(errorMsg); // Use a general error state or specific for blogs
+  };
+  
+  const pushToHistory = (newContent: string) => {
+    setHistory(prev => {
+      if (newContent === prev.stack[prev.index]) return prev;
+      const newStack = prev.stack.slice(0, prev.index + 1);
+      newStack.push(newContent);
+      if (newStack.length > 50) newStack.shift();
+      return { stack: newStack, index: newStack.length - 1 };
+    });
+  };
+
+  const handleUndo = () => {
+    setHistory(prev => {
+      if (prev.index > 0 && editingBlog) {
+        if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
+        const prevContent = prev.stack[prev.index - 1];
+        setEditingBlog({ ...editingBlog, content: prevContent });
+        return { ...prev, index: prev.index - 1 };
+      }
+      return prev;
+    });
+  };
+
+  const handleRedo = () => {
+    setHistory(prev => {
+      if (prev.index < prev.stack.length - 1 && editingBlog) {
+        if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
+        const nextContent = prev.stack[prev.index + 1];
+        setEditingBlog({ ...editingBlog, content: nextContent });
+        return { ...prev, index: prev.index + 1 };
+      }
+      return prev;
+    });
   };
   const handleSave = async () => {
     if (!editingBlog) return;
@@ -350,7 +390,9 @@ const Dashboard = () => {
       prefix + selectedText + suffix + 
       currentContent.substring(end);
 
+    if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
     setEditingBlog({ ...editingBlog, content: newContent });
+    pushToHistory(newContent);
 
     // Move cursor back to useful position and preserve scroll
     setTimeout(() => {
@@ -387,7 +429,9 @@ const Dashboard = () => {
         const markdown = `\n![${file.name.split('.')[0]}](${url})\n`;
         const newContent = currentContent.substring(0, start) + markdown + currentContent.substring(end);
         
+        if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
         setEditingBlog({ ...editingBlog, content: newContent });
+        pushToHistory(newContent);
         
         // Return focus to textarea and place cursor after the inserted image
         setTimeout(() => {
@@ -442,7 +486,9 @@ const Dashboard = () => {
         const markdown = `\n![Pasted Image](${url})\n`;
         const newContent = currentContent.substring(0, start) + markdown + currentContent.substring(end);
 
+        if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
         setEditingBlog({ ...editingBlog, content: newContent });
+        pushToHistory(newContent);
 
         setTimeout(() => {
           if (textarea) {
@@ -476,6 +522,7 @@ const Dashboard = () => {
       authors: [{ name: "", bio: "" }], // Start with one empty author field
       category: "", views: 0
     });
+    setHistory({ stack: [""], index: 0 });
     setShowEditor(true);
     setUserError("");
   };
@@ -742,7 +789,11 @@ const Dashboard = () => {
                   <Link to={`/blog/${blog.slug || blog._id}`} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                     <Eye className="h-3.5 w-3.5" />
                   </Link>
-                  <button onClick={() => { setEditingBlog({ ...blog, authors: getAuthorsForEditor(blog) }); setShowEditor(true); }} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                  <button onClick={() => { 
+                    setEditingBlog({ ...blog, authors: getAuthorsForEditor(blog) }); 
+                    setHistory({ stack: [blog.content], index: 0 });
+                    setShowEditor(true); 
+                  }} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                     <Edit className="h-3.5 w-3.5" />
                   </button>
                   <button onClick={() => handleDelete(blog._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
@@ -972,13 +1023,13 @@ const Dashboard = () => {
 
       {/* Blog Editor Modal */}
       {showEditor && editingBlog && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/90 backdrop-blur-sm p-4" onClick={() => { setShowEditor(false); setEditingBlog(null); }}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/90 backdrop-blur-sm p-4" onClick={() => { setShowEditor(false); setEditingBlog(null); if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current); }}>
           <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-card" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6">
               <h2 className="font-display text-lg font-bold text-primary">
                 {editingBlog._id ? "Edit Post" : "New Post"}
               </h2>
-              <button onClick={() => { setShowEditor(false); setEditingBlog(null); }} className="rounded-full p-1 text-muted-foreground hover:text-foreground">
+              <button onClick={() => { setShowEditor(false); setEditingBlog(null); if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current); }} className="rounded-full p-1 text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -1084,71 +1135,98 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <label className={labelClass}>Content (Markdown)</label>
-                  <div className="mb-0 flex flex-wrap items-center gap-1 rounded-t-lg border border-border bg-secondary/30 p-1.5">
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("**", "**")} title="Bold">
-                      <Bold className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("*", "*")} title="Italic">
-                      <Italic className="h-3.5 w-3.5" />
-                    </Button>
-                    <div className="mx-1 h-4 w-px bg-border" />
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("# ")} title="Heading 1">
-                      <Heading1 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("## ")} title="Heading 2">
-                      <Heading2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("### ")} title="Heading 3">
-                      <Heading3 className="h-3.5 w-3.5" />
-                    </Button>
-                    <div className="mx-1 h-4 w-px bg-border" />
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("- ")} title="Bullet List">
-                      <List className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("1. ")} title="Numbered List">
-                      <ListOrdered className="h-3.5 w-3.5" />
-                    </Button>
-                    <div className="mx-1 h-4 w-px bg-border" />
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("> ")} title="Quote">
-                      <Quote className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("`", "`")} title="Inline Code">
-                      <Code className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("\n```\n", "\n```\n")} title="Code Block">
-                      <SquareCode className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("\n---\n")} title="Horizontal Rule">
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                    <div className="mx-1 h-4 w-px bg-border" />
-                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("[", "](url)")} title="Insert Link">
-                      <LinkIcon className="h-3.5 w-3.5" />
-                    </Button>
-                    
-                    <div className="ml-auto flex items-center gap-1">
-                      <input
-                        type="file"
-                        ref={contentImageInputRef}
-                        onChange={handleContentImageUpload}
-                        accept="image/*"
-                        className="hidden"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={isUploadingContentImage}
-                        onClick={() => contentImageInputRef.current?.click()}
-                        className="h-8 px-2 text-[10px] font-heading border border-primary/20 hover:bg-primary/10 text-primary uppercase tracking-wider transition-all"
-                      >
-                        {isUploadingContentImage ? (
-                          <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-                        ) : (
-                          <Image className="h-3 w-3 mr-1.5" />
-                        )}
-                        {isUploadingContentImage ? "..." : "Image"}
+                  <div className="rounded-t-lg border border-border bg-secondary/30">
+                    <div className="flex flex-wrap items-center gap-1 border-b border-border/50 p-1.5">
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("**", "**")} title="Bold">
+                        <Bold className="h-3.5 w-3.5" />
                       </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("*", "*")} title="Italic">
+                        <Italic className="h-3.5 w-3.5" />
+                      </Button>
+                      <div className="mx-1 h-4 w-px bg-border" />
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("# ")} title="Heading 1">
+                        <Heading1 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("## ")} title="Heading 2">
+                        <Heading2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("### ")} title="Heading 3">
+                        <Heading3 className="h-3.5 w-3.5" />
+                      </Button>
+                      <div className="mx-1 h-4 w-px bg-border" />
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("- ")} title="Bullet List">
+                        <List className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("1. ")} title="Numbered List">
+                        <ListOrdered className="h-3.5 w-3.5" />
+                      </Button>
+                      <div className="mx-1 h-4 w-px bg-border" />
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("> ")} title="Quote">
+                        <Quote className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("`", "`")} title="Inline Code">
+                        <Code className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("\n```\n", "\n```\n")} title="Code Block">
+                        <SquareCode className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("\n---\n")} title="Horizontal Rule">
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                      <div className="mx-1 h-4 w-px bg-border" />
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("[", "](url)")} title="Insert Link">
+                        <LinkIcon className="h-3.5 w-3.5" />
+                      </Button>
+                      
+                      <div className="ml-auto flex items-center gap-1">
+                        <input
+                          type="file"
+                          ref={contentImageInputRef}
+                          onChange={handleContentImageUpload}
+                          accept="image/*"
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={isUploadingContentImage}
+                          onClick={() => contentImageInputRef.current?.click()}
+                          className="h-8 px-2 text-[10px] font-heading border border-primary/20 hover:bg-primary/10 text-primary uppercase tracking-wider transition-all"
+                        >
+                          {isUploadingContentImage ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                          ) : (
+                            <Image className="h-3 w-3 mr-1.5" />
+                          )}
+                          {isUploadingContentImage ? "..." : "Image"}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 px-1.5 py-1 bg-background/20">
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 w-7 p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-30" 
+                        onClick={handleUndo} 
+                        disabled={history.index <= 0}
+                        title="Undo (Ctrl+Z)"
+                      >
+                        <Undo className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 w-7 p-0 hover:bg-primary/10 hover:text-primary disabled:opacity-30" 
+                        onClick={handleRedo} 
+                        disabled={history.index >= history.stack.length - 1}
+                        title="Redo (Ctrl+Y)"
+                      >
+                        <Redo className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="ml-2 font-body text-[10px] text-muted-foreground/60 uppercase tracking-tighter">History</span>
                     </div>
                   </div>
                   <textarea 
@@ -1160,9 +1238,16 @@ const Dashboard = () => {
                       const start = t.selectionStart;
                       const end = t.selectionEnd;
                       const scrollTop = t.scrollTop;
+                      const newValue = t.value;
                       
-                      setEditingBlog({ ...editingBlog, content: t.value });
+                      setEditingBlog({ ...editingBlog, content: newValue });
                       
+                      // Debounced history push for typing
+                      if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
+                      historyTimeoutRef.current = setTimeout(() => {
+                        pushToHistory(newValue);
+                      }, 1000);
+
                       // Fix for cursor/scroll jumping in controlled components during heavy re-renders
                       requestAnimationFrame(() => {
                         if (contentTextareaRef.current) {
@@ -1170,6 +1255,29 @@ const Dashboard = () => {
                           contentTextareaRef.current.scrollTop = scrollTop;
                         }
                       });
+                    }}
+                    onKeyDown={(e) => {
+                      const isMod = e.ctrlKey || e.metaKey;
+                      // Undo: Ctrl+Z
+                      if (isMod && e.key === "z" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleUndo();
+                      }
+                      // Redo: Ctrl+Y or Ctrl+Shift+Z
+                      if (isMod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+                        e.preventDefault();
+                        handleRedo();
+                      }
+                      // Bold: Ctrl+B
+                      if (isMod && e.key === "b") {
+                        e.preventDefault();
+                        insertMarkdown("**", "**");
+                      }
+                      // Italic: Ctrl+I
+                      if (isMod && e.key === "i") {
+                        e.preventDefault();
+                        insertMarkdown("*", "*");
+                      }
                     }}
                     onPaste={handleContentPaste}
                     className={`${inputClass} rounded-t-none resize-y font-mono text-xs leading-relaxed border-t-0`} 
@@ -1182,7 +1290,7 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-4 py-3 sm:px-6">
-              <Button variant="outline" disabled={isSavingBlog} onClick={() => { setShowEditor(false); setEditingBlog(null); }} className="font-heading text-sm">Cancel</Button>
+              <Button variant="outline" disabled={isSavingBlog} onClick={() => { setShowEditor(false); setEditingBlog(null); if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current); }} className="font-heading text-sm">Cancel</Button>
               <Button onClick={handleSave} disabled={isSavingBlog} className="gradient-red font-heading text-sm tracking-wide min-w-[120px]">
                 {isSavingBlog ? (
                   <>

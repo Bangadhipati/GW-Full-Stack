@@ -13,9 +13,11 @@ const Index = () => {
     let timer: NodeJS.Timeout;
     
     // Show overlay if loading for > 5s with no data (spin-up) 
-    // or if an error occurred with no cached data (crash)
+    // or if a connectivity error occurred (detected automatically in background)
     if (loading && blogs.length === 0) {
       timer = setTimeout(() => setShowOverlay(true), 5000);
+    } else if (error === "Connection lost to server") {
+      setShowOverlay(true);
     } else if (error && blogs.length === 0) {
       setShowOverlay(true);
     } else {
