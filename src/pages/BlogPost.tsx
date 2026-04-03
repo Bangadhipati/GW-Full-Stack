@@ -4,7 +4,7 @@ import { ArrowLeft, Calendar, User as UserIcon, ChevronRight, Share2 } from "luc
 import { useBlogs, BlogPost } from "@/contexts/BlogContext"; // Import BlogPost from context
 import Navbar from "@/components/Navbar"; // Make sure Navbar is imported, it seems you have a copy of it in ui
 import AdBanner from "@/components/AdBanner";
-import api from "@/api"; // Import your API client
+import { getOptimizedImageURL } from "@/lib/imageUtils";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -153,7 +153,7 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
             <div className="relative overflow-hidden rounded-lg sm:rounded-xl md:rounded-2xl aspect-[16/8] sm:aspect-[16/7]">
               {blog.thumbnail ? (
                 <img 
-                  src={`${blog.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${blog.thumbnail}`} 
+                  src={getOptimizedImageURL(blog.thumbnail, 1200)} 
                   alt={blog.title} 
                   className="absolute inset-0 h-full w-full object-cover" 
                   fetchpriority="high"
@@ -182,7 +182,7 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
                     img: ({ node, ...props }) => (
                       <img 
                         {...props} 
-                        src={props.src?.startsWith('http') ? props.src : `${api.API_STATIC_BASE_URL}${props.src}`} 
+                        src={getOptimizedImageURL(props.src || "", 1000)} 
                         alt={props.alt || ''}
                         className="rounded-xl border border-border w-full object-cover my-8"
                         loading="lazy"
@@ -210,7 +210,7 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
                     <Link key={post._id} to={`/blog/${post._id}`} className="group overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-primary/30 hover:glow-red">
                       <div className="aspect-[16/10] overflow-hidden">
                         <img 
-                          src={`${post.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${post.thumbnail}`} 
+                          src={getOptimizedImageURL(post.thumbnail, 400)} 
                           alt={post.title} 
                           className="h-full w-full object-cover"
                           loading="lazy"

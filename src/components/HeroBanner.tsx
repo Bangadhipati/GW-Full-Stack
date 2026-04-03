@@ -1,26 +1,47 @@
 import heroBanner from "@/assets/bishnupur-temples.webp";
 import { useAlliances } from "@/contexts/AllianceContext";
-import api from "@/api";
+import { getOptimizedImageURL } from "@/lib/imageUtils";
 
 const HeroBanner = () => {
   const { alliances } = useAlliances();
-  const MarqueeItem = ({ alliance }: { alliance: typeof alliances[0] }) => (
-    <a
-      href={alliance.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex shrink-0 items-center gap-2.5 transition-opacity hover:opacity-100 opacity-70 sm:gap-3 mx-5 sm:mx-8"
-    >
-      <img
-        src={`${alliance.logo.startsWith("http") ? "" : api.API_STATIC_BASE_URL}${alliance.logo}`}
-        alt={alliance.name}
-        className="h-8 w-auto rounded-sm object-contain sm:h-10"
-      />
-      <span className="font-heading text-xs tracking-wider text-foreground whitespace-nowrap sm:text-sm">
-        {alliance.name}
-      </span>
-    </a>
-  );
+  const MarqueeItem = ({ alliance }: { alliance: typeof alliances[0] }) => {
+    const isValidUrl = alliance.url && alliance.url !== "#" && alliance.url.trim() !== "";
+    
+    const commonClasses = "flex shrink-0 items-center gap-2.5 transition-opacity opacity-70 sm:gap-3 mx-5 sm:mx-8";
+
+    const content = (
+      <>
+        <img
+          src={getOptimizedImageURL(alliance.logo, 100)}
+          alt={alliance.name}
+          className="h-8 w-auto rounded-sm object-contain sm:h-10"
+          loading="lazy"
+        />
+        <span className="font-heading text-xs tracking-wider text-foreground whitespace-nowrap sm:text-sm">
+          {alliance.name}
+        </span>
+      </>
+    );
+
+    if (isValidUrl) {
+      return (
+        <a
+          href={alliance.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`${commonClasses} hover:opacity-100`}
+        >
+          {content}
+        </a>
+      );
+    }
+
+    return (
+      <div className={commonClasses}>
+        {content}
+      </div>
+    );
+  };
 
   return (
     <section className="relative h-[70vh] min-h-[500px] w-full overflow-hidden sm:h-[85vh] sm:min-h-[600px]">

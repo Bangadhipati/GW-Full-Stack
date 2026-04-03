@@ -1,7 +1,7 @@
 import { BlogPost } from "@/data/blogs";
 import { Link } from "react-router-dom";
 import { Calendar, User as UserIcon } from "lucide-react";
-import api from "@/api";
+import { getOptimizedImageURL } from "@/lib/imageUtils";
 
 interface BlogCardProps {
   blog: BlogPost;
@@ -29,7 +29,7 @@ const BlogCard = ({ blog, variant = "standard" }: BlogCardProps) => {
     >
       {/* Thumbnail */}
       <img
-        src={`${blog.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${blog.thumbnail}`}
+        src={getOptimizedImageURL(blog.thumbnail, isFeatured ? 800 : 400)}
         alt={blog.title}
         className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
         loading="lazy"

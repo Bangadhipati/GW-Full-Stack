@@ -4,6 +4,7 @@ import {
   ArrowLeft, Plus, Edit, Trash2, Eye, EyeOff, Users, FileText, X, Save,
   Megaphone, Image, Link as LinkIcon, Clock, Shield, PenLine, BarChart3,
   KeyRound, UserPlus, ChevronDown, Upload, Handshake, Loader2,
+  Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Code, Minus, SquareCode
 } from "lucide-react";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { uploadImage } from "@/lib/cloudinary";
@@ -234,13 +235,20 @@ const Dashboard = () => {
 
   const [editingBlog, setEditingBlog] = useState<BlogPost | null>(null);
   const [showEditor, setShowEditor] = useState(false);
+  const [isSavingBlog, setIsSavingBlog] = useState(false);
+  const [isUploadingContentImage, setIsUploadingContentImage] = useState(false);
+  const contentImageInputRef = useRef<HTMLInputElement>(null);
+  const contentTextareaRef = useRef<HTMLTextAreaElement>(null);
+
   const [showAdEditor, setShowAdEditor] = useState(false);
+  const [isSavingAd, setIsSavingAd] = useState(false);
   // Adjusted Ad type to use _id for backend interaction, and id for frontend compatibility
   const [editingAd, setEditingAd] = useState<Partial<Ad> & { isNew?: boolean }>({});
 
 
   // Alliance management state
   const [showAllianceEditor, setShowAllianceEditor] = useState(false);
+  const [isSavingAlliance, setIsSavingAlliance] = useState(false);
   // Adjusted Alliance type to use _id for backend interaction, and id for frontend compatibility
   const [editingAlliance, setEditingAlliance] = useState<Partial<Alliance> & { isNew?: boolean }>({});
 
@@ -267,41 +275,49 @@ const Dashboard = () => {
   const handleSave = async () => {
     if (!editingBlog) return;
     setUserError(""); // Clear previous error
+    setIsSavingBlog(true);
 
-    // Ensure authors array is filtered to only include valid names
-    const validAuthors = editingBlog.authors?.filter(a => a.name.trim()) || [];
-    // Reconstruct the comma-separated author string from the structured authors
-    const authorString = validAuthors.map(a => a.name.trim()).join(", ");
+    try {
+      // Ensure authors array is filtered to only include valid names
+      const validAuthors = editingBlog.authors?.filter(a => a.name.trim()) || [];
+      // Reconstruct the comma-separated author string from the structured authors
+      const authorString = validAuthors.map(a => a.name.trim()).join(", ");
 
-    const blogDataToSend: Omit<BlogPost, "_id" | "id" | "views"> = {
-        title: editingBlog.title,
-        description: editingBlog.description,
-        content: editingBlog.content,
-        thumbnail: editingBlog.thumbnail,
-        date: editingBlog.date,
-        author: authorString, // Ensure this reflects the structured authors
-        authors: validAuthors, // Send the structured authors
-        category: editingBlog.category,
-    };
+      const blogDataToSend: Omit<BlogPost, "_id" | "id" | "views"> = {
+          title: editingBlog.title,
+          description: editingBlog.description,
+          content: editingBlog.content,
+          thumbnail: editingBlog.thumbnail,
+          date: editingBlog.date,
+          author: authorString, // Ensure this reflects the structured authors
+          authors: validAuthors, // Send the structured authors
+          category: editingBlog.category,
+      };
 
-    let errorMsg: string | null = null;
-    if (editingBlog._id) { // Check for _id from backend
-      errorMsg = await updateBlog(editingBlog._id, blogDataToSend);
-    } else {
-      // For new blogs, _id is not required, and views will be defaulted by backend
-      // Basic validation for new posts:
-      if (!blogDataToSend.title || !blogDataToSend.content || !blogDataToSend.thumbnail || !blogDataToSend.date || !blogDataToSend.category || !blogDataToSend.author) {
-          setUserError("Please fill all required fields: Title, Content, Thumbnail, Date, Author, Category.");
-          return;
+      let errorMsg: string | null = null;
+      if (editingBlog._id) { // Check for _id from backend
+        errorMsg = await updateBlog(editingBlog._id, blogDataToSend);
+      } else {
+        // For new blogs, _id is not required, and views will be defaulted by backend
+        // Basic validation for new posts:
+        if (!blogDataToSend.title || !blogDataToSend.content || !blogDataToSend.thumbnail || !blogDataToSend.date || !blogDataToSend.category || !blogDataToSend.author) {
+            setUserError("Please fill all required fields: Title, Content, Thumbnail, Date, Author, Category.");
+            setIsSavingBlog(false);
+            return;
+        }
+        errorMsg = await addBlog(blogDataToSend);
       }
-      errorMsg = await addBlog(blogDataToSend);
-    }
 
-    if (errorMsg) {
-      setUserError(errorMsg);
-    } else {
-      setShowEditor(false);
-      setEditingBlog(null);
+      if (errorMsg) {
+        setUserError(errorMsg);
+      } else {
+        setShowEditor(false);
+        setEditingBlog(null);
+      }
+    } catch (err: any) {
+      setUserError(err.message || "An unexpected error occurred while saving.");
+    } finally {
+      setIsSavingBlog(false);
     }
   };
 
@@ -318,6 +334,82 @@ const Dashboard = () => {
     return [];
   };
 
+  const insertMarkdown = (prefix: string, suffix: string = "") => {
+    if (!editingBlog) return;
+    const textarea = contentTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const scrollTop = textarea.scrollTop; // Capture current scroll position
+    const currentContent = editingBlog.content;
+    const selectedText = currentContent.substring(start, end);
+
+    const newContent = 
+      currentContent.substring(0, start) + 
+      prefix + selectedText + suffix + 
+      currentContent.substring(end);
+
+    setEditingBlog({ ...editingBlog, content: newContent });
+
+    // Move cursor back to useful position and preserve scroll
+    setTimeout(() => {
+      if (textarea) {
+        textarea.focus();
+        // If text was selected, put cursor after suffix. If not, put it between prefix and suffix.
+        const newCursorPos = selectedText 
+          ? start + prefix.length + selectedText.length + suffix.length
+          : start + prefix.length;
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+        textarea.scrollTop = scrollTop; // Restore scroll position
+      }
+    }, 0);
+  };
+
+  const handleContentImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingBlog) return;
+    
+    try {
+      setIsUploadingContentImage(true);
+      // Compress and resize the image client-side before uploading
+      const compressedFile = await compressImage(file, 1600, 1600, 0.8);
+      const url = await uploadImage(compressedFile);
+      
+      const textarea = contentTextareaRef.current;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const currentContent = editingBlog.content;
+        const scrollTop = textarea.scrollTop;
+        
+        // Markdown image syntax
+        const markdown = `\n![${file.name.split('.')[0]}](${url})\n`;
+        const newContent = currentContent.substring(0, start) + markdown + currentContent.substring(end);
+        
+        setEditingBlog({ ...editingBlog, content: newContent });
+        
+        // Return focus to textarea and place cursor after the inserted image
+        setTimeout(() => {
+          if (textarea) {
+            textarea.focus();
+            const newPos = start + markdown.length;
+            textarea.setSelectionRange(newPos, newPos);
+            textarea.scrollTop = scrollTop;
+          }
+        }, 0);
+      } else {
+        setEditingBlog({ ...editingBlog, content: editingBlog.content + `\n![Image](${url})\n` });
+      }
+    } catch (err: any) {
+      console.error("Content image upload error:", err);
+      setUserError(err.message || "Failed to upload image to content");
+    } finally {
+      setIsUploadingContentImage(false);
+      if (contentImageInputRef.current) contentImageInputRef.current.value = "";
+    }
+  };
+
   const handleNew = () => {
     const today = new Date();
     const year = today.getFullYear();
@@ -329,8 +421,8 @@ const Dashboard = () => {
       _id: "", // Empty _id signifies a new post
       title: "", description: "", content: "", thumbnail: "",
       date: formattedDate, // Set to local current date
-      author: user.name, // This will be overwritten by `authorString` on save.
-      authors: [{ name: user.name, bio: "" }], // Start with current user as first author
+      author: "", // Keep blank as per user request
+      authors: [{ name: "", bio: "" }], // Start with one empty author field
       category: "", views: 0
     });
     setShowEditor(true);
@@ -354,25 +446,33 @@ const Dashboard = () => {
       return;
     }
     setUserError("");
-    const payload = {
-      horizontalImageUrl: editingAd.horizontalImageUrl,
-      verticalImageUrl: editingAd.verticalImageUrl,
-      link: editingAd.link || "",
-      label: editingAd.label || "",
-    };
+    setIsSavingAd(true);
+    
+    try {
+      const payload = {
+        horizontalImageUrl: editingAd.horizontalImageUrl,
+        verticalImageUrl: editingAd.verticalImageUrl,
+        link: editingAd.link || "",
+        label: editingAd.label || "",
+      };
 
-    let errorMsg: string | null = null;
-    if (editingAd.isNew) {
-      errorMsg = await addAd(payload);
-    } else if (editingAd._id) { // Use _id for update
-      errorMsg = await updateAd(editingAd._id, payload);
-    }
+      let errorMsg: string | null = null;
+      if (editingAd.isNew) {
+        errorMsg = await addAd(payload);
+      } else if (editingAd._id) { // Use _id for update
+        errorMsg = await updateAd(editingAd._id, payload);
+      }
 
-    if (errorMsg) {
-      setUserError(errorMsg);
-    } else {
-      setShowAdEditor(false);
-      setEditingAd({});
+      if (errorMsg) {
+        setUserError(errorMsg);
+      } else {
+        setShowAdEditor(false);
+        setEditingAd({});
+      }
+    } catch (err: any) {
+      setUserError(err.message || "An error occurred while saving the ad.");
+    } finally {
+      setIsSavingAd(false);
     }
   };
 
@@ -424,29 +524,37 @@ const Dashboard = () => {
 
   // Alliance Handlers
   const handleSaveAlliance = async () => {
-    if (!editingAlliance.name || !editingAlliance.logo || !editingAlliance.url) {
-      setUserError("Name, Logo URL, and Link URL are required for an alliance.");
+    if (!editingAlliance.name || !editingAlliance.logo) {
+      setUserError("Name and logo are required for an alliance.");
       return;
     }
     setUserError("");
-    const payload = {
-      name: editingAlliance.name,
-      logo: editingAlliance.logo,
-      url: editingAlliance.url,
-    };
+    setIsSavingAlliance(true);
 
-    let errorMsg: string | null = null;
-    if (editingAlliance.isNew) {
-      errorMsg = await addAlliance(payload);
-    } else if (editingAlliance._id) { // Use _id for update
-      errorMsg = await updateAlliance(editingAlliance._id, payload);
-    }
+    try {
+      const payload = {
+        name: editingAlliance.name,
+        logo: editingAlliance.logo,
+        url: editingAlliance.url || "#",
+      };
 
-    if (errorMsg) {
-      setUserError(errorMsg);
-    } else {
-      setShowAllianceEditor(false);
-      setEditingAlliance({});
+      let errorMsg: string | null = null;
+      if (editingAlliance.isNew) {
+        errorMsg = await addAlliance(payload);
+      } else if (editingAlliance._id) { // Use _id for update
+        errorMsg = await updateAlliance(editingAlliance._id, payload);
+      }
+
+      if (errorMsg) {
+        setUserError(errorMsg);
+      } else {
+        setShowAllianceEditor(false);
+        setEditingAlliance({});
+      }
+    } catch (err: any) {
+      setUserError(err.message || "An error occurred while saving the alliance.");
+    } finally {
+      setIsSavingAlliance(false);
     }
   };
 
@@ -925,14 +1033,115 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <label className={labelClass}>Content (Markdown)</label>
-                  <textarea rows={10} value={editingBlog.content} onChange={(e) => setEditingBlog({ ...editingBlog, content: e.target.value })} className={`${inputClass} resize-y`} />
+                  <div className="mb-0 flex flex-wrap items-center gap-1 rounded-t-lg border border-border bg-secondary/30 p-1.5">
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("**", "**")} title="Bold">
+                      <Bold className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("*", "*")} title="Italic">
+                      <Italic className="h-3.5 w-3.5" />
+                    </Button>
+                    <div className="mx-1 h-4 w-px bg-border" />
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("# ")} title="Heading 1">
+                      <Heading1 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("## ")} title="Heading 2">
+                      <Heading2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("### ")} title="Heading 3">
+                      <Heading3 className="h-3.5 w-3.5" />
+                    </Button>
+                    <div className="mx-1 h-4 w-px bg-border" />
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("- ")} title="Bullet List">
+                      <List className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("1. ")} title="Numbered List">
+                      <ListOrdered className="h-3.5 w-3.5" />
+                    </Button>
+                    <div className="mx-1 h-4 w-px bg-border" />
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("> ")} title="Quote">
+                      <Quote className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("`", "`")} title="Inline Code">
+                      <Code className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("\n```\n", "\n```\n")} title="Code Block">
+                      <SquareCode className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("\n---\n")} title="Horizontal Rule">
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                    <div className="mx-1 h-4 w-px bg-border" />
+                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("[", "](url)")} title="Insert Link">
+                      <LinkIcon className="h-3.5 w-3.5" />
+                    </Button>
+                    
+                    <div className="ml-auto flex items-center gap-1">
+                      <input
+                        type="file"
+                        ref={contentImageInputRef}
+                        onChange={handleContentImageUpload}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={isUploadingContentImage}
+                        onClick={() => contentImageInputRef.current?.click()}
+                        className="h-8 px-2 text-[10px] font-heading border border-primary/20 hover:bg-primary/10 text-primary uppercase tracking-wider transition-all"
+                      >
+                        {isUploadingContentImage ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                        ) : (
+                          <Image className="h-3 w-3 mr-1.5" />
+                        )}
+                        {isUploadingContentImage ? "..." : "Image"}
+                      </Button>
+                    </div>
+                  </div>
+                  <textarea 
+                    ref={contentTextareaRef}
+                    rows={12} 
+                    value={editingBlog.content} 
+                    onChange={(e) => {
+                      const t = e.target;
+                      const start = t.selectionStart;
+                      const end = t.selectionEnd;
+                      const scrollTop = t.scrollTop;
+                      
+                      setEditingBlog({ ...editingBlog, content: t.value });
+                      
+                      // Fix for cursor/scroll jumping in controlled components during heavy re-renders
+                      requestAnimationFrame(() => {
+                        if (contentTextareaRef.current) {
+                          contentTextareaRef.current.setSelectionRange(start, end);
+                          contentTextareaRef.current.scrollTop = scrollTop;
+                        }
+                      });
+                    }}
+                    className={`${inputClass} rounded-t-none resize-y font-mono text-xs leading-relaxed border-t-0`} 
+                    placeholder="Write your content here. Use the toolbar above for formatting."
+                  />
+                  <p className="mt-1.5 text-[10px] text-muted-foreground font-body">
+                    Markdown supported. Select text and click buttons to format. For links, replace 'url' with your destination.
+                  </p>
                 </div>
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-4 py-3 sm:px-6">
-              <Button variant="outline" onClick={() => { setShowEditor(false); setEditingBlog(null); }} className="font-heading text-sm">Cancel</Button>
-              <Button onClick={handleSave} className="gradient-red font-heading text-sm tracking-wide">
-                <Save className="mr-2 h-4 w-4" /> Save Post
+              <Button variant="outline" disabled={isSavingBlog} onClick={() => { setShowEditor(false); setEditingBlog(null); }} className="font-heading text-sm">Cancel</Button>
+              <Button onClick={handleSave} disabled={isSavingBlog} className="gradient-red font-heading text-sm tracking-wide min-w-[120px]">
+                {isSavingBlog ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" /> Save Post
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -982,9 +1191,18 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-4 py-3 sm:px-6">
-              <Button variant="outline" onClick={() => { setShowAdEditor(false); setEditingAd({}); }} className="font-heading text-sm">Cancel</Button>
-              <Button onClick={handleSaveAd} disabled={!editingAd.horizontalImageUrl || !editingAd.verticalImageUrl} className="gradient-red font-heading text-sm tracking-wide">
-                <Save className="mr-2 h-4 w-4" /> Save Ad
+              <Button variant="outline" disabled={isSavingAd} onClick={() => { setShowAdEditor(false); setEditingAd({}); }} className="font-heading text-sm">Cancel</Button>
+              <Button onClick={handleSaveAd} disabled={isSavingAd || !editingAd.horizontalImageUrl || !editingAd.verticalImageUrl} className="gradient-red font-heading text-sm tracking-wide min-w-[120px]">
+                {isSavingAd ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" /> Save Ad
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -1081,13 +1299,22 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-4 py-3 sm:px-6">
-              <Button variant="outline" onClick={() => { setShowAllianceEditor(false); setEditingAlliance({}); }} className="font-heading text-sm">Cancel</Button>
+              <Button variant="outline" disabled={isSavingAlliance} onClick={() => { setShowAllianceEditor(false); setEditingAlliance({}); }} className="font-heading text-sm">Cancel</Button>
               <Button
                 onClick={handleSaveAlliance}
-                disabled={!editingAlliance.name || !editingAlliance.logo || !editingAlliance.url}
-                className="gradient-red font-heading text-sm tracking-wide"
+                disabled={isSavingAlliance || !editingAlliance.name || !editingAlliance.logo}
+                className="gradient-red font-heading text-sm tracking-wide min-w-[140px]"
               >
-                <Save className="mr-2 h-4 w-4" /> Save Alliance
+                {isSavingAlliance ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" /> Save Alliance
+                  </>
+                )}
               </Button>
             </div>
           </div>

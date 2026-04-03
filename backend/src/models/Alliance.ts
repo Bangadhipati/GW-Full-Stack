@@ -10,7 +10,7 @@ const AllianceSchema = new mongoose.Schema<IAlliance>(
   {
     name: { type: String, required: true },
     logo: { type: String, required: true },
-    url: { type: String, required: true },
+    url: { type: String, required: false },
   },
   {
     timestamps: true,

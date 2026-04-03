@@ -16,9 +16,9 @@ const getAlliances = asyncHandler(async (req: Request, res: Response) => {
 const createAlliance = asyncHandler(async (req: Request, res: Response) => {
   const { name, logo, url } = req.body;
 
-  if (!name || !logo || !url) {
+  if (!name || !logo) {
     res.status(400);
-    throw new Error('Name, logo, and URL are required');
+    throw new Error('Name and logo are required');
   }
 
   const alliance = new Alliance({

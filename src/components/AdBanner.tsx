@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAds } from "@/contexts/AdContext";
 import { Ad } from "@/data/ads";
 import { cn } from "@/lib/utils";
-import api from "@/api";
+import { getOptimizedImageURL } from "@/lib/imageUtils";
 
 interface AdBannerProps {
   orientation?: "vertical" | "horizontal";
@@ -96,7 +96,10 @@ const AdBanner = ({ orientation = "vertical", className }: AdBannerProps) => {
         orientation === "vertical" ? "aspect-[1/2]" : "aspect-[3/1]"
       )}>
         <img
-          src={`${(orientation === "vertical" ? ad.verticalImageUrl : ad.horizontalImageUrl).startsWith('http') ? '' : api.API_STATIC_BASE_URL}${orientation === "vertical" ? ad.verticalImageUrl : ad.horizontalImageUrl}`}
+          src={getOptimizedImageURL(
+            orientation === "vertical" ? ad.verticalImageUrl : ad.horizontalImageUrl,
+            orientation === "vertical" ? 300 : 900
+          )}
           alt={ad.label || "Advertisement"}
           className={cn(
             "absolute inset-0 h-full w-full object-cover transition-opacity duration-300 pointer-events-none",
@@ -121,7 +124,7 @@ const AdBanner = ({ orientation = "vertical", className }: AdBannerProps) => {
       </div>
     );
 
-    if (ad.link) {
+    if (ad.link && ad.link !== "#" && ad.link.trim() !== "") {
       return (
         <a
           href={ad.link}
