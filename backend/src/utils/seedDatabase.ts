@@ -40,12 +40,19 @@ const seedData = async () => {
     console.log(`${createdUsers.length} users seeded!`);
 
     // --- Blog Posts ---
-    const blogsToSeed = DEFAULT_BLOGS.map((blog: ISeedBlogPost) => ({
-      ...blog,
-      author: blog.author || (blog.authors ? blog.authors.map((a: { name: string }) => a.name).join(', ') : 'Unknown Author'),
-      authors: blog.authors || (blog.author ? blog.author.split(/,\s*|\s+and\s+/).filter(Boolean).map((name: string) => ({ name: name.trim() })) : []),
-      views: Math.floor(Math.random() * 500) + 100,
-    }));
+    const blogsToSeed = DEFAULT_BLOGS.map((blog: ISeedBlogPost) => {
+      const title = blog.title;
+      const baseSlug = title.toLowerCase().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
+      const randomSuffix = Math.random().toString(36).substring(2, 7);
+
+      return {
+        ...blog,
+        slug: `${baseSlug}-${randomSuffix}`,
+        author: blog.author || (blog.authors ? blog.authors.map((a: { name: string }) => a.name).join(', ') : 'Unknown Author'),
+        authors: blog.authors || (blog.author ? blog.author.split(/,\s*|\s+and\s+/).filter(Boolean).map((name: string) => ({ name: name.trim() })) : []),
+        views: Math.floor(Math.random() * 500) + 100,
+      };
+    });
     const createdBlogs = await BlogPost.insertMany(blogsToSeed);
     console.log(`${createdBlogs.length} blog posts seeded!`);
 

@@ -55,6 +55,36 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Dynamic meta tags for URL previews
+  useEffect(() => {
+    if (blog) {
+      document.title = `${blog.title} | Gaudiya Warriors`;
+      
+      const thumbUrl = getOptimizedImageURL(blog.thumbnail, 1200);
+
+      // Meta Description
+      const metaDescription = document.querySelector('meta[name="description"]');
+      if (metaDescription) metaDescription.setAttribute("content", blog.description || "");
+
+      // OpenGraph (Facebook, WhatsApp, LinkedIn)
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle) ogTitle.setAttribute("content", blog.title);
+
+      const ogDesc = document.querySelector('meta[property="og:description"]');
+      if (ogDesc) ogDesc.setAttribute("content", blog.description || "");
+
+      const ogImage = document.querySelector('meta[property="og:image"]');
+      if (ogImage) ogImage.setAttribute("content", thumbUrl);
+
+      // Twitter
+      const twitterTitle = document.querySelector('meta[name="twitter:title"]');
+      if (twitterTitle) twitterTitle.setAttribute("content", blog.title);
+
+      const twitterImage = document.querySelector('meta[name="twitter:image"]');
+      if (twitterImage) twitterImage.setAttribute("content", thumbUrl);
+    }
+  }, [blog]);
+
   const loadBlog = useCallback(async () => {
     if (!id) {
       navigate("/404");
@@ -207,7 +237,7 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
                 <h3 className="mb-6 font-display text-lg font-bold text-foreground sm:mb-8 sm:text-xl">Related Articles</h3>
                 <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 sm:gap-5">
                   {relatedPosts.map((post) => (
-                    <Link key={post._id} to={`/blog/${post._id}`} className="group overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-primary/30 hover:glow-red">
+                    <Link key={post._id} to={`/blog/${post.slug || post._id}`} className="group overflow-hidden rounded-lg border border-border bg-card transition-all hover:border-primary/30 hover:glow-red">
                       <div className="aspect-[16/10] overflow-hidden">
                         <img 
                           src={getOptimizedImageURL(post.thumbnail, 400)} 

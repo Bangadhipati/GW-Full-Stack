@@ -24,7 +24,7 @@ const BlogCard = ({ blog, variant = "standard" }: BlogCardProps) => {
 
   return (
     <Link
-      to={`/blog/${blog.id}`}
+      to={`/blog/${blog.slug || blog.id}`}
       className={`group relative overflow-hidden rounded-xl border border-border/50 bg-card transition-all duration-500 hover:border-primary/40 hover:glow-red col-span-1 row-span-1 ${gridClass[variant] || gridClass.standard}`}
     >
       {/* Thumbnail */}

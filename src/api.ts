@@ -24,6 +24,7 @@ interface BlogAuthor {
 interface BlogPost {
   _id: string; // The backend uses _id for MongoDB documents
   id?: string; // Optional: Keep original frontend `id` if still used locally for some reason, though `_id` should replace it.
+  slug: string;
   title: string;
   description?: string; // Made optional
   content: string;
@@ -138,13 +139,14 @@ const api = {
   getBlogs: async (): Promise<BlogPost[]> => {
     const response = await fetch(`${API_BASE_URL}/blogs`);
     const data = await handleResponse(response);
-    return data.map((blog: BlogPost) => ({ ...blog, id: blog._id })); // Map _id to id for frontend compatibility
+    // Prefer slug as primary identifier for frontend routes
+    return data.map((blog: BlogPost) => ({ ...blog, id: blog.slug || blog._id }));
   },
 
-  getBlogPost: async (id: string): Promise<BlogPost> => {
-    const response = await fetch(`${API_BASE_URL}/blogs/${id}`);
+  getBlogPost: async (idOrSlug: string): Promise<BlogPost> => {
+    const response = await fetch(`${API_BASE_URL}/blogs/${idOrSlug}`);
     const data = await handleResponse(response);
-    return { ...data, id: data._id }; // Map _id to id
+    return { ...data, id: data.slug || data._id };
   },
 
   createBlog: async (blogData: Omit<BlogPost, "_id" | "id" | "views">, token: string): Promise<BlogPost> => {

@@ -7,7 +7,8 @@
     "start": "node dist/server.js",
     "dev": "nodemon",
     "build": "tsc",
-    "seed": "ts-node src/utils/seedDatabase.ts"
+    "seed": "ts-node src/utils/seedDatabase.ts",
+    "migrate:slugs": "ts-node src/utils/migrateSlugs.ts"
   },
   "keywords": [],
   "author": "AI Assistant",

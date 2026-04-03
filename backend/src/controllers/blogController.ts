@@ -17,6 +17,16 @@ const parseAuthorsFromString = (authorString: string): IBlogAuthor[] => {
   return parts.map(name => ({ name: name.trim() }));
 };
 
+const generateSlug = (title: string): string => {
+  const baseSlug = title
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '') // Remove non-word chars
+    .replace(/[\s_-]+/g, '-')  // Replace spaces/underscores with hyphens
+    .replace(/^-+|-+$/g, '');  // Trim leading/trailing hyphens
+  const randomSuffix = Math.random().toString(36).substring(2, 7);
+  return `${baseSlug}-${randomSuffix}`;
+};
+
 // @desc    Get all blog posts
 // @route   GET /api/blogs
 // @access  Public
@@ -25,16 +35,28 @@ const getBlogPosts = asyncHandler(async (req: Request, res: Response) => {
   res.json(blogs);
 });
 
-// @desc    Get a single blog post by ID
+// @desc    Get a single blog post by ID or Slug
 // @route   GET /api/blogs/:id
 // @access  Public
 const getBlogPostById = asyncHandler(async (req: Request, res: Response) => {
-  // Use atomic $inc for real-time tracking accuracy
-  const blog = await BlogPost.findByIdAndUpdate(
-    req.params.id,
+  const identifier = req.params.id;
+  let blog;
+
+  // Try to find by slug first
+  blog = await BlogPost.findOneAndUpdate(
+    { slug: identifier },
     { $inc: { views: 1 } },
     { new: true }
   );
+
+  // Fallback to find by ID if slug not found
+  if (!blog && mongoose.Types.ObjectId.isValid(identifier)) {
+    blog = await BlogPost.findByIdAndUpdate(
+      identifier,
+      { $inc: { views: 1 } },
+      { new: true }
+    );
+  }
 
   if (blog) {
     res.json(blog);
@@ -61,6 +83,7 @@ const createBlogPost = asyncHandler(async (req: Request, res: Response) => {
 
   const blogPost = new BlogPost({
     title,
+    slug: generateSlug(title),
     description,
     content,
     thumbnail,
@@ -86,6 +109,10 @@ const updateBlogPost = asyncHandler(async (req: Request, res: Response) => {
   if (blog) {
     // Use structured authors if provided, otherwise parse from string
     const blogAuthors = authors && authors.length > 0 ? authors : parseAuthorsFromString(author);
+
+    if (title && title !== blog.title) {
+      blog.slug = generateSlug(title);
+    }
 
     blog.title = title || blog.title;
     blog.description = description || blog.description;

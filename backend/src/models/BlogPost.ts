@@ -7,6 +7,7 @@ export interface IBlogAuthor {
 
 export interface IBlogPost extends mongoose.Document {
   title: string;
+  slug: string; // Unique SEO-friendly URL identifier
   description?: string; // Made optional
   content: string;
   thumbnail: string;
@@ -25,6 +26,7 @@ const BlogAuthorSchema = new mongoose.Schema<IBlogAuthor>({
 const BlogPostSchema = new mongoose.Schema<IBlogPost>(
   {
     title: { type: String, required: true },
+    slug: { type: String, required: true, unique: true },
     description: { type: String, required: false }, // Made optional
     content: { type: String, required: true },
     thumbnail: { type: String, required: true }, // URL to image
