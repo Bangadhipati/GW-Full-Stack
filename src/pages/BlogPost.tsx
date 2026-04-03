@@ -62,27 +62,37 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
       document.title = `${blog.title} | Gaudiya Warriors`;
       
       const thumbUrl = getOptimizedImageURL(blog.thumbnail, 1200);
+      const currentUrl = window.location.href;
+
+      // Helper to update or create meta tags
+      const setMeta = (attrName: string, attrValue: string, content: string) => {
+        let element = document.querySelector(`meta[${attrName}="${attrValue}"]`);
+        if (!element) {
+          element = document.createElement('meta');
+          element.setAttribute(attrName, attrValue);
+          document.head.appendChild(element);
+        }
+        element.setAttribute("content", content);
+      };
 
       // Meta Description
-      const metaDescription = document.querySelector('meta[name="description"]');
-      if (metaDescription) metaDescription.setAttribute("content", blog.description || "");
+      setMeta("name", "description", blog.description || "");
 
       // OpenGraph (Facebook, WhatsApp, LinkedIn)
-      const ogTitle = document.querySelector('meta[property="og:title"]');
-      if (ogTitle) ogTitle.setAttribute("content", blog.title);
-
-      const ogDesc = document.querySelector('meta[property="og:description"]');
-      if (ogDesc) ogDesc.setAttribute("content", blog.description || "");
-
-      const ogImage = document.querySelector('meta[property="og:image"]');
-      if (ogImage) ogImage.setAttribute("content", thumbUrl);
+      setMeta("property", "og:title", blog.title);
+      setMeta("property", "og:description", blog.description || "");
+      setMeta("property", "og:image", thumbUrl);
+      setMeta("property", "og:image:secure_url", thumbUrl);
+      setMeta("property", "og:url", currentUrl);
+      setMeta("property", "og:type", "article");
+      setMeta("property", "og:image:width", "1200");
+      setMeta("property", "og:image:height", "630");
 
       // Twitter
-      const twitterTitle = document.querySelector('meta[name="twitter:title"]');
-      if (twitterTitle) twitterTitle.setAttribute("content", blog.title);
-
-      const twitterImage = document.querySelector('meta[name="twitter:image"]');
-      if (twitterImage) twitterImage.setAttribute("content", thumbUrl);
+      setMeta("name", "twitter:title", blog.title);
+      setMeta("name", "twitter:description", blog.description || "");
+      setMeta("name", "twitter:image", thumbUrl);
+      setMeta("name", "twitter:card", "summary_large_image");
     }
   }, [blog]);
 

@@ -26,5 +26,10 @@ export const getOptimizedImageURL = (url: string, width?: number, height?: numbe
   // Handle local assets or already full URLs
   if (url.startsWith("http")) return url;
   
+  // If it's a relative path starting with /, use the site origin for absolute URL
+  if (url.startsWith("/")) {
+    return `${window.location.origin}${url}`;
+  }
+  
   return `${api.API_STATIC_BASE_URL}${url}`;
 };
