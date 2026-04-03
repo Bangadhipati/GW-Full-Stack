@@ -63,7 +63,7 @@ export const BlogProvider = ({ children }: { children: ReactNode }) => {
     } catch (err: any) {
       console.error("Failed to fetch blogs:", err);
       setError(err.message || "Failed to load blogs");
-      setBlogs(defaultClientBlogs.map(blog => ({...blog, _id: blog.id, views: 0}))); // Fallback to default if API fails
+      setBlogs([]); // Do not show fallback data
     } finally {
       setLoading(false);
     }

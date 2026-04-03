@@ -60,7 +60,7 @@ export const AdProvider = ({ children }: { children: ReactNode }) => {
     } catch (err: any) {
       console.error("Failed to fetch ads:", err);
       setError(err.message || "Failed to load ads");
-      setAds(DEFAULT_ADS.map(ad => ({...ad, _id: ad.id || `temp-${Date.now()}`}))); // Fallback to default if API fails
+      setAds([]); // Do not show fallback data
     } finally {
       setLoading(false);
     }

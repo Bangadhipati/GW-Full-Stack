@@ -57,7 +57,7 @@ export const AllianceProvider = ({ children }: { children: ReactNode }) => {
     } catch (err: any) {
       console.error("Failed to fetch alliances:", err);
       setError(err.message || "Failed to load alliances");
-      setAlliances(DEFAULT_ALLIANCES); // Fallback to default if API fails
+      setAlliances([]); // Do not show fallback data
     } finally {
       setLoading(false);
     }

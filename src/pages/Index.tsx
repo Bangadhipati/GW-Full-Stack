@@ -1,15 +1,35 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import HeroBanner from "@/components/HeroBanner";
 import BlogSection from "@/components/BlogSection";
 import { useBlogs } from "@/contexts/BlogContext";
+import ServerOfflineOverlay from "@/components/ServerOfflineOverlay";
 
 const Index = () => {
-  const { trackSiteVisit } = useBlogs();
+  const { trackSiteVisit, loading, error, blogs } = useBlogs();
+  const [showOverlay, setShowOverlay] = useState(false);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    
+    // Show overlay if loading for > 5s with no data (spin-up) 
+    // or if an error occurred with no cached data (crash)
+    if (loading && blogs.length === 0) {
+      timer = setTimeout(() => setShowOverlay(true), 5000);
+    } else if (error && blogs.length === 0) {
+      setShowOverlay(true);
+    } else {
+      setShowOverlay(false);
+    }
+
+    return () => clearTimeout(timer);
+  }, [loading, error, blogs.length]);
 
   useEffect(() => {
     trackSiteVisit();
   }, [trackSiteVisit]);
+
+  if (showOverlay) return <ServerOfflineOverlay />;
 
   return (
     <div className="min-h-screen bg-background">

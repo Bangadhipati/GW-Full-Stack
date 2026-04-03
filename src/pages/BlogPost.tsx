@@ -4,6 +4,7 @@ import { ArrowLeft, Calendar, User as UserIcon, ChevronRight, Share2 } from "luc
 import { useBlogs, BlogPost } from "@/contexts/BlogContext"; // Import BlogPost from context
 import Navbar from "@/components/Navbar"; // Make sure Navbar is imported, it seems you have a copy of it in ui
 import AdBanner from "@/components/AdBanner";
+import ServerOfflineOverlay from "@/components/ServerOfflineOverlay";
 import { getOptimizedImageURL } from "@/lib/imageUtils";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -119,7 +120,23 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
     ? blogs.filter((b) => b.category === blog.category && b._id !== blog._id).slice(0, 3)
     : [];
 
-  if (loading) {
+  const [showOverlay, setShowOverlay] = useState(false);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (loading && !blog) {
+      timer = setTimeout(() => setShowOverlay(true), 6000);
+    } else if (error && !blog) {
+      setShowOverlay(true);
+    } else {
+      setShowOverlay(false);
+    }
+    return () => clearTimeout(timer);
+  }, [loading, error, blog]);
+
+  if (showOverlay) return <ServerOfflineOverlay />;
+
+  if (loading && !blog) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Navbar />
@@ -130,7 +147,7 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
     );
   }
 
-  if (error || !blog) {
+  if ((error || !blog) && !loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Navbar />

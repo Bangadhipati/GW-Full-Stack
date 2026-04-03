@@ -410,6 +410,57 @@ const Dashboard = () => {
     }
   };
 
+  const handleContentPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    let imageFile: File | null = null;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        imageFile = items[i].getAsFile();
+        break;
+      }
+    }
+
+    if (!imageFile || !editingBlog) return;
+
+    // Prevent default paste behavior for images so we can handle the upload ourselves
+    e.preventDefault();
+
+    try {
+      setIsUploadingContentImage(true);
+      // Process and upload
+      const compressedFile = await compressImage(imageFile, 1600, 1600, 0.8);
+      const url = await uploadImage(compressedFile);
+
+      const textarea = contentTextareaRef.current;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const currentContent = editingBlog.content;
+        const scrollTop = textarea.scrollTop;
+
+        const markdown = `\n![Pasted Image](${url})\n`;
+        const newContent = currentContent.substring(0, start) + markdown + currentContent.substring(end);
+
+        setEditingBlog({ ...editingBlog, content: newContent });
+
+        setTimeout(() => {
+          if (textarea) {
+            textarea.focus();
+            const newPos = start + markdown.length;
+            textarea.setSelectionRange(newPos, newPos);
+            textarea.scrollTop = scrollTop;
+          }
+        }, 0);
+      }
+    } catch (err: any) {
+      console.error("Paste upload error:", err);
+      setUserError(err.message || "Failed to upload pasted image");
+    } finally {
+      setIsUploadingContentImage(false);
+    }
+  };
+
   const handleNew = () => {
     const today = new Date();
     const year = today.getFullYear();
@@ -688,7 +739,7 @@ const Dashboard = () => {
                   </div>
                 </div>
                 <div className="flex gap-1.5 sm:flex-shrink-0">
-                  <Link to={`/blog/${blog._id}`} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                  <Link to={`/blog/${blog.slug || blog._id}`} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                     <Eye className="h-3.5 w-3.5" />
                   </Link>
                   <button onClick={() => { setEditingBlog({ ...blog, authors: getAuthorsForEditor(blog) }); setShowEditor(true); }} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
@@ -1120,8 +1171,9 @@ const Dashboard = () => {
                         }
                       });
                     }}
+                    onPaste={handleContentPaste}
                     className={`${inputClass} rounded-t-none resize-y font-mono text-xs leading-relaxed border-t-0`} 
-                    placeholder="Write your content here. Use the toolbar above for formatting."
+                    placeholder="Write your content here. Use the toolbar above for formatting. You can also paste images directly."
                   />
                   <p className="mt-1.5 text-[10px] text-muted-foreground font-body">
                     Markdown supported. Select text and click buttons to format. For links, replace 'url' with your destination.
