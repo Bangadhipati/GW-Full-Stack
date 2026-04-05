@@ -31,7 +31,7 @@ export default async (request: Request, context: any) => {
 
     const title = `${blog.title} | Gaudiya Warriors`;
     const description = blog.description || "Reviving Bengal's heritage and cultural legacy.";
-    const image = blog.thumbnail.startsWith('http') ? blog.thumbnail : `https://your-api-domain.com${blog.thumbnail}`;
+    const image = blog.thumbnail.startsWith('http') ? blog.thumbnail : `https://gaudiyawarriors.netlify.app${blog.thumbnail}`;
 
     // Inject dynamic meta tags into the HTML
     html = html.replace(/<title>.*?<\/title>/, `<title>${title}</title>`);
