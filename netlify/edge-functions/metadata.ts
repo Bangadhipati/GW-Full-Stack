@@ -16,7 +16,7 @@ export default async (request: Request, context: any) => {
 
   try {
     // Fetch data from your actual backend
-    const backendUrl = "http://localhost:5000/api"; // Replace with your production URL or env var
+    const backendUrl = "https://gw-full-stack.onrender.com/api";
     const response = await fetch(`${backendUrl}/blogs/${blogId}`);
     
     if (!response.ok) return;
@@ -27,8 +27,12 @@ export default async (request: Request, context: any) => {
     let html = await res.text();
 
     const title = `${blog.title} | Gaudiya Warriors`;
-    const description = blog.description || "Reviving Bengal's heritage and cultural legacy.";
-    const image = blog.thumbnail.startsWith('http') ? blog.thumbnail : `https://your-api-domain.com${blog.thumbnail}`;
+    const description = blog.description || "Reviving Bengal's glorious heritage and cultural legacy.";
+    
+    // If the image is a local path, prefix it with your Netlify frontend URL
+    const image = blog.thumbnail.startsWith('http') 
+      ? blog.thumbnail 
+      : `https://gaudiyawarriors.netlify.app${blog.thumbnail.startsWith('/') ? '' : '/'}${blog.thumbnail}`;
 
     // Inject dynamic meta tags into the HTML
     html = html.replace(/<title>.*?<\/title>/, `<title>${title}</title>`);
