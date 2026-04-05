@@ -55,23 +55,29 @@ const ServerOfflineOverlay = () => {
   }, []);
 
   useEffect(() => {
+    // Don't auto-refresh while the user is actively training
+    if (isGameActive) return;
+
     const checkServerStatus = async () => {
       try {
-        const baseUrl = import.meta.env.VITE_BACKEND_URL?.replace('/api', '') || 'http://localhost:5000';
-        // Use a lightweight check to see if the server is responsive
-        const response = await fetch(baseUrl, { mode: 'no-cors' });
+        const apiUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api';
+        // Verify connectivity via a real data endpoint to ensure server and DB are fully responsive
+        // This prevents false refreshes when only the load-balancer is up but not the app
+        const response = await fetch(`${apiUrl}/blogs/stats/total-views`);
         
-        // If we get any response (even opaque due to no-cors), the server is up
-        handleHardRefresh();
+        // If the API returns a success status, the backend is truly operational
+        if (response.ok) {
+          handleHardRefresh();
+        }
       } catch (err) {
-        // Still unreachable
+        // Still unreachable or booting
       }
     };
 
-    // Auto-check connection every 15 seconds to catch Render spin-up automatically
-    const interval = setInterval(checkServerStatus, 15000);
+    // Auto-check connection every 20 seconds to catch Render spin-up
+    const interval = setInterval(checkServerStatus, 20000);
     return () => clearInterval(interval);
-  }, [handleHardRefresh]);
+  }, [handleHardRefresh, isGameActive]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background p-4 text-center overflow-hidden">

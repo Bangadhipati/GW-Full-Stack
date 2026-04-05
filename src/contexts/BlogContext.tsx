@@ -103,11 +103,29 @@ export const BlogProvider = ({ children }: { children: ReactNode }) => {
   const getBlogById = useCallback(async (id: string): Promise<BlogPost | undefined> => {
     try {
       const blog = await api.getBlogPost(id);
-      if (error === "Connection lost to server") setError(null);
+      // Clear connectivity error if we successfully reached the server
+      if (error === "Connection lost to server") {
+        setError(null);
+      }
       return { ...blog, id: blog._id };
     } catch (err: any) {
       console.error(`Failed to fetch blog post with ID ${id}:`, err);
-      setError(err.message || "Failed to load blog post");
+      
+      // Detect network-level failures (like Render spin-up timeouts or mobile signal loss)
+      const errorMsg = err.message || "";
+      const isNetworkError = !err.status && (
+        errorMsg.toLowerCase().includes("fetch") || 
+        errorMsg.toLowerCase().includes("network") || 
+        errorMsg.toLowerCase().includes("failed to execute") ||
+        errorMsg.toLowerCase().includes("load")
+      );
+      
+      if (isNetworkError) {
+        setError("Connection lost to server");
+      } else {
+        setError(errorMsg || "Failed to load blog post");
+      }
+      
       return undefined;
     }
   }, [error]);

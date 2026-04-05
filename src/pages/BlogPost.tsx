@@ -107,9 +107,19 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
       const fetchedBlog = await getBlogById(id);
       if (fetchedBlog) {
         setBlog(fetchedBlog);
-        fetchTotalViews(); // Update total views after fetching a blog (which increments its view count)
+        fetchTotalViews();
       } else {
-        navigate("/404");
+        // On mobile or slow connections (especially during Render backend spin-ups), 
+        // the initial fetch might fail. We only navigate to 404 if we are certain 
+        // it's a "Not Found" error from the API, not a connectivity issue.
+        const isActuallyNotFound = contextError?.toLowerCase().includes("not found");
+        const isConnectivityIssue = contextError === "Connection lost to server";
+        
+        if (isActuallyNotFound && !isConnectivityIssue) {
+          navigate("/404");
+        }
+        // If it is a connectivity issue, the ServerOfflineOverlay logic below will 
+        // catch the error state and show the training game instead of a 404.
       }
     } catch (err: any) {
       console.error("Error fetching blog post:", err);
@@ -118,7 +128,7 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
     } finally {
       setLoading(false);
     }
-  }, [id, navigate, getBlogById, fetchTotalViews]);
+  }, [id, navigate, getBlogById, fetchTotalViews, contextError]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
