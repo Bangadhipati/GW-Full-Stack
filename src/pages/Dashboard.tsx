@@ -5,7 +5,7 @@ import {
   Megaphone, Image, Link as LinkIcon, Clock, Shield, PenLine, BarChart3,
   KeyRound, UserPlus, ChevronDown, Upload, Handshake, Loader2,
   Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Code, Minus, SquareCode,
-  Undo, Redo
+  Undo, Redo, Sigma
 } from "lucide-react";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { uploadImage } from "@/lib/cloudinary";
@@ -16,6 +16,17 @@ import { useBlogs } from "@/contexts/BlogContext";
 import { Ad } from "@/data/ads";
 import { BlogPost, BlogAuthor } from "@/data/blogs";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import Navbar from "@/components/Navbar";
 import ServerOfflineOverlay from "@/components/ServerOfflineOverlay";
 import api from "@/api";
@@ -237,9 +248,32 @@ const Dashboard = () => {
   const defaultTab: TabId = canAccessBlogs ? "blogs" : canAccessAds ? "ads" : "alliances"; // Adjusted default tab order
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
 
+  useEffect(() => {
+    setSelectedBlogIds([]);
+    setSelectedAdIds([]);
+    setSelectedAllianceIds([]);
+    setSelectedUserIds([]);
+  }, [activeTab]);
+
   const [editingBlog, setEditingBlog] = useState<BlogPost | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [isSavingBlog, setIsSavingBlog] = useState(false);
+  const [selectedBlogIds, setSelectedBlogIds] = useState<string[]>([]);
+  const [blogToDelete, setBlogToDelete] = useState<string | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const [selectedAdIds, setSelectedAdIds] = useState<string[]>([]);
+  const [adToDelete, setAdToDelete] = useState<string | null>(null);
+  const [isBulkDeletingAds, setIsBulkDeletingAds] = useState(false);
+
+  const [selectedAllianceIds, setSelectedAllianceIds] = useState<string[]>([]);
+  const [allianceToDelete, setAllianceToDelete] = useState<string | null>(null);
+  const [isBulkDeletingAlliances, setIsBulkDeletingAlliances] = useState(false);
+
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [userToDelete, setUserToDelete] = useState<string | null>(null);
+  const [isBulkDeletingUsers, setIsBulkDeletingUsers] = useState(false);
+
   const [history, setHistory] = useState<{ stack: string[], index: number }>({ stack: [], index: -1 });
   const historyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isUploadingContentImage, setIsUploadingContentImage] = useState(false);
@@ -276,7 +310,76 @@ const Dashboard = () => {
   // Blog handlers
   const handleDelete = async (id: string) => {
     const errorMsg = await removeBlog(id);
-    if (errorMsg) setUserError(errorMsg); // Use a general error state or specific for blogs
+    if (errorMsg) {
+      setUserError(errorMsg);
+    } else {
+      setSelectedBlogIds(prev => prev.filter(i => i !== id));
+    }
+    setBlogToDelete(null);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedBlogIds.length === 0) return;
+    setIsSavingBlog(true);
+    setUserError("");
+    
+    let successCount = 0;
+    for (const id of selectedBlogIds) {
+      const err = await removeBlog(id);
+      if (!err) successCount++;
+    }
+
+    if (successCount < selectedBlogIds.length) {
+      setUserError(`Successfully deleted ${successCount} posts, but ${selectedBlogIds.length - successCount} failed.`);
+    }
+    
+    setSelectedBlogIds([]);
+    setIsBulkDeleting(false);
+    setIsSavingBlog(false);
+  };
+
+  const toggleBlogSelection = (id: string) => {
+    setSelectedBlogIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllBlogs = () => {
+    if (selectedBlogIds.length === blogs.length && blogs.length > 0) {
+      setSelectedBlogIds([]);
+    } else {
+      setSelectedBlogIds(blogs.map(b => b._id));
+    }
+  };
+
+  const toggleAdSelection = (id: string) => {
+    setSelectedAdIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+  const toggleSelectAllAds = () => {
+    if (selectedAdIds.length === ads.length && ads.length > 0) setSelectedAdIds([]);
+    else setSelectedAdIds(ads.map(a => a._id));
+  };
+
+  const toggleAllianceSelection = (id: string) => {
+    setSelectedAllianceIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+  const toggleSelectAllAlliances = () => {
+    if (selectedAllianceIds.length === alliances.length && alliances.length > 0) setSelectedAllianceIds([]);
+    else setSelectedAllianceIds(alliances.map(a => a._id));
+  };
+
+  const toggleUserSelection = (id: string) => {
+    const userAcc = accounts.find(a => a._id === id);
+    if (userAcc?.email.toLowerCase() === "bangadhipati@gmail.com") return;
+    setSelectedUserIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+  const toggleSelectAllUsers = () => {
+    const selectable = accounts.filter(a => a.email.toLowerCase() !== "bangadhipati@gmail.com");
+    if (selectedUserIds.length === selectable.length && selectable.length > 0) {
+      setSelectedUserIds([]);
+    } else {
+      setSelectedUserIds(selectable.map(u => u._id));
+    }
   };
   
   const pushToHistory = (newContent: string) => {
@@ -528,6 +631,30 @@ const Dashboard = () => {
   };
 
   // Ad handlers
+  const handleDeleteAd = async (id: string) => {
+    const errorMsg = await removeAd(id);
+    if (errorMsg) setUserError(errorMsg);
+    else setSelectedAdIds(prev => prev.filter(i => i !== id));
+    setAdToDelete(null);
+  };
+
+  const handleBulkDeleteAds = async () => {
+    if (selectedAdIds.length === 0) return;
+    setIsSavingAd(true);
+    setUserError("");
+    let successCount = 0;
+    for (const id of selectedAdIds) {
+      const err = await removeAd(id);
+      if (!err) successCount++;
+    }
+    if (successCount < selectedAdIds.length) {
+      setUserError(`Successfully deleted ${successCount} ads, but ${selectedAdIds.length - successCount} failed.`);
+    }
+    setSelectedAdIds([]);
+    setIsBulkDeletingAds(false);
+    setIsSavingAd(false);
+  };
+
   const handleNewAd = () => {
     setEditingAd({ isNew: true, horizontalImageUrl: "", verticalImageUrl: "", link: "", label: "" });
     setShowAdEditor(true);
@@ -574,6 +701,31 @@ const Dashboard = () => {
     }
   };
 
+  // Alliance handlers
+  const handleDeleteAlliance = async (id: string) => {
+    const errorMsg = await removeAlliance(id);
+    if (errorMsg) setUserError(errorMsg);
+    else setSelectedAllianceIds(prev => prev.filter(i => i !== id));
+    setAllianceToDelete(null);
+  };
+
+  const handleBulkDeleteAlliances = async () => {
+    if (selectedAllianceIds.length === 0) return;
+    setIsSavingAlliance(true);
+    setUserError("");
+    let successCount = 0;
+    for (const id of selectedAllianceIds) {
+      const err = await removeAlliance(id);
+      if (!err) successCount++;
+    }
+    if (successCount < selectedAllianceIds.length) {
+      setUserError(`Successfully deleted ${successCount} alliances, but ${selectedAllianceIds.length - successCount} failed.`);
+    }
+    setSelectedAllianceIds([]);
+    setIsBulkDeletingAlliances(false);
+    setIsSavingAlliance(false);
+  };
+
   // User handlers
   const handleAddUser = async () => {
     setUserError("");
@@ -606,7 +758,29 @@ const Dashboard = () => {
   const handleAccountRemove = async (userId: string) => {
     setUserError("");
     const err = await removeAccount(userId);
-    if (err) setUserError(err);
+    if (err) {
+      setUserError(err);
+    } else {
+      setSelectedUserIds(prev => prev.filter(i => i !== userId));
+    }
+    setUserToDelete(null);
+  };
+
+  const handleBulkDeleteUsers = async () => {
+    if (selectedUserIds.length === 0) return;
+    setUserError("");
+    let successCount = 0;
+    for (const id of selectedUserIds) {
+      const acc = accounts.find(a => a._id === id);
+      if (acc && acc.email.toLowerCase() === "bangadhipati@gmail.com") continue;
+      const err = await removeAccount(id);
+      if (!err) successCount++;
+    }
+    if (successCount < selectedUserIds.length) {
+      setUserError(`Successfully deleted ${successCount} accounts. Some (like primary admin) might have been skipped.`);
+    }
+    setSelectedUserIds([]);
+    setIsBulkDeletingUsers(false);
   };
   const handleAccountDetailsUpdate = async (userId: string) => {
     setUserError("");
@@ -760,6 +934,41 @@ const Dashboard = () => {
         {/* === BLOGS TAB === */}
         {activeTab === "blogs" && canAccessBlogs && (
           <div className="space-y-3">
+            {blogs.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/30 p-3">
+                <div className="flex items-center gap-3">
+                  <Checkbox 
+                    checked={blogs.length > 0 && selectedBlogIds.length === blogs.length}
+                    onCheckedChange={toggleSelectAllBlogs}
+                    id="select-all-blogs"
+                  />
+                  <label htmlFor="select-all-blogs" className="font-heading text-xs font-semibold tracking-wider text-muted-foreground uppercase cursor-pointer">
+                    {selectedBlogIds.length > 0 ? `${selectedBlogIds.length} Selected` : "Select All"}
+                  </label>
+                </div>
+                {selectedBlogIds.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => setIsBulkDeleting(true)}
+                      className="h-8 font-heading text-[10px] tracking-wider uppercase"
+                    >
+                      <Trash2 className="mr-1.5 h-3 w-3" /> Delete Selected
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setSelectedBlogIds([])}
+                      className="h-8 font-heading text-[10px] tracking-wider uppercase text-muted-foreground"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {blogs.length === 0 && (
               <div className="rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
                 <FileText className="mx-auto h-8 w-8 text-muted-foreground/50 mb-3" />
@@ -767,8 +976,26 @@ const Dashboard = () => {
               </div>
             )}
             {blogs.map((blog) => (
-              <div key={blog._id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
-                <div className="h-20 w-full flex-shrink-0 overflow-hidden rounded-lg bg-secondary sm:h-16 sm:w-24">
+              <div key={blog._id} className={`flex flex-col gap-3 rounded-xl border transition-all sm:flex-row sm:items-center sm:p-4 p-3 ${
+                selectedBlogIds.includes(blog._id) ? "border-primary/50 bg-primary/5" : "border-border bg-card hover:border-primary/30"
+              }`}>
+                <div className="flex items-center gap-3 sm:mr-1">
+                  <Checkbox 
+                    checked={selectedBlogIds.includes(blog._id)}
+                    onCheckedChange={() => toggleBlogSelection(blog._id)}
+                  />
+                  <div className="h-16 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-secondary hidden sm:block">
+                    {blog.thumbnail ? (
+                      <img src={`${blog.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${blog.thumbnail}`} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center bg-gradient-to-br from-primary/20 to-secondary">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="sm:hidden h-20 w-full overflow-hidden rounded-lg bg-secondary">
                   {blog.thumbnail ? (
                     <img src={`${blog.thumbnail.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${blog.thumbnail}`} alt="" className="h-full w-full object-cover" />
                   ) : (
@@ -777,6 +1004,7 @@ const Dashboard = () => {
                     </div>
                   )}
                 </div>
+                
                 <div className="flex-1 min-w-0">
                   <h3 className="truncate font-heading text-sm font-bold text-foreground sm:text-base">{blog.title || "Untitled"}</h3>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
@@ -796,7 +1024,7 @@ const Dashboard = () => {
                   }} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                     <Edit className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={() => handleDelete(blog._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
+                  <button onClick={() => setBlogToDelete(blog._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -808,6 +1036,40 @@ const Dashboard = () => {
         {/* === ADS TAB === */}
         {activeTab === "ads" && canAccessAds && (
           <div className="space-y-4">
+            {ads.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/30 p-3">
+                <div className="flex items-center gap-3">
+                  <Checkbox 
+                    checked={ads.length > 0 && selectedAdIds.length === ads.length}
+                    onCheckedChange={toggleSelectAllAds}
+                    id="select-all-ads"
+                  />
+                  <label htmlFor="select-all-ads" className="font-heading text-xs font-semibold tracking-wider text-muted-foreground uppercase cursor-pointer">
+                    {selectedAdIds.length > 0 ? `${selectedAdIds.length} Selected` : "Select All"}
+                  </label>
+                </div>
+                {selectedAdIds.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => setIsBulkDeletingAds(true)}
+                      className="h-8 font-heading text-[10px] tracking-wider uppercase"
+                    >
+                      <Trash2 className="mr-1.5 h-3 w-3" /> Delete Selected
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setSelectedAdIds([])}
+                      className="h-8 font-heading text-[10px] tracking-wider uppercase text-muted-foreground"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
               <div className="flex items-center gap-3 mb-3">
                 <Clock className="h-4 w-4 text-primary" />
@@ -829,9 +1091,17 @@ const Dashboard = () => {
                 </div>
               )}
               {ads.map((ad) => (
-                <div key={ad._id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
-                  <div className="h-20 w-full flex-shrink-0 overflow-hidden rounded-lg bg-secondary sm:h-16 sm:w-24">
-                    <img src={`${ad.horizontalImageUrl.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${ad.horizontalImageUrl}`} alt={ad.label || "Ad"} className="h-full w-full object-cover" />
+                <div key={ad._id} className={`flex flex-col gap-3 rounded-xl border transition-all sm:flex-row sm:items-center sm:p-4 p-3 ${
+                  selectedAdIds.includes(ad._id) ? "border-primary/50 bg-primary/5" : "border-border bg-card hover:border-primary/30"
+                }`}>
+                  <div className="flex items-center gap-3 sm:mr-1">
+                    <Checkbox 
+                      checked={selectedAdIds.includes(ad._id)}
+                      onCheckedChange={() => toggleAdSelection(ad._id)}
+                    />
+                    <div className="h-20 w-full flex-shrink-0 overflow-hidden rounded-lg bg-secondary sm:h-16 sm:w-24">
+                      <img src={`${ad.horizontalImageUrl.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${ad.horizontalImageUrl}`} alt={ad.label || "Ad"} className="h-full w-full object-cover" />
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="truncate font-heading text-sm font-bold text-foreground sm:text-base">{ad.label || "Untitled Ad"}</h3>
@@ -844,7 +1114,7 @@ const Dashboard = () => {
                     <button onClick={() => handleEditAd(ad)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                       <Edit className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => removeAd(ad._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
+                    <button onClick={() => setAdToDelete(ad._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -857,6 +1127,40 @@ const Dashboard = () => {
         {/* === ALLIANCES TAB === */}
         {activeTab === "alliances" && canAccessAlliances && (
           <div className="space-y-3">
+            {alliances.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/30 p-3">
+                <div className="flex items-center gap-3">
+                  <Checkbox 
+                    checked={alliances.length > 0 && selectedAllianceIds.length === alliances.length}
+                    onCheckedChange={toggleSelectAllAlliances}
+                    id="select-all-alliances"
+                  />
+                  <label htmlFor="select-all-alliances" className="font-heading text-xs font-semibold tracking-wider text-muted-foreground uppercase cursor-pointer">
+                    {selectedAllianceIds.length > 0 ? `${selectedAllianceIds.length} Selected` : "Select All"}
+                  </label>
+                </div>
+                {selectedAllianceIds.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => setIsBulkDeletingAlliances(true)}
+                      className="h-8 font-heading text-[10px] tracking-wider uppercase"
+                    >
+                      <Trash2 className="mr-1.5 h-3 w-3" /> Remove Selected
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setSelectedAllianceIds([])}
+                      className="h-8 font-heading text-[10px] tracking-wider uppercase text-muted-foreground"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
             {alliances.length === 0 && (
               <div className="rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
                 <Handshake className="mx-auto h-8 w-8 text-muted-foreground/50 mb-3" />
@@ -864,13 +1168,21 @@ const Dashboard = () => {
               </div>
             )}
             {alliances.map((alliance) => (
-              <div key={alliance._id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 transition-all hover:border-primary/30 sm:flex-row sm:items-center sm:p-4">
-                <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-secondary flex items-center justify-center">
-                  {alliance.logo ? (
-                    <img src={`${alliance.logo.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${alliance.logo}`} alt={alliance.name} className="h-full w-full object-contain p-1" />
-                  ) : (
-                    <Handshake className="h-5 w-5 text-muted-foreground" />
-                  )}
+              <div key={alliance._id} className={`flex flex-col gap-3 rounded-xl border transition-all sm:flex-row sm:items-center sm:p-4 p-3 ${
+                selectedAllianceIds.includes(alliance._id) ? "border-primary/50 bg-primary/5" : "border-border bg-card hover:border-primary/30"
+              }`}>
+                <div className="flex items-center gap-3 sm:mr-1">
+                  <Checkbox 
+                    checked={selectedAllianceIds.includes(alliance._id)}
+                    onCheckedChange={() => toggleAllianceSelection(alliance._id)}
+                  />
+                  <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-secondary flex items-center justify-center">
+                    {alliance.logo ? (
+                      <img src={`${alliance.logo.startsWith('http') ? '' : api.API_STATIC_BASE_URL}${alliance.logo}`} alt={alliance.name} className="h-full w-full object-contain p-1" />
+                    ) : (
+                      <Handshake className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </div>
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="truncate font-heading text-sm font-bold text-foreground sm:text-base">{alliance.name || "Untitled"}</h3>
@@ -889,7 +1201,7 @@ const Dashboard = () => {
                   <button onClick={() => { setEditingAlliance({ ...alliance, isNew: false }); setShowAllianceEditor(true); }} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors">
                     <Edit className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={() => removeAlliance(alliance._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
+                  <button onClick={() => setAllianceToDelete(alliance._id)} className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -901,14 +1213,59 @@ const Dashboard = () => {
         {/* === USERS TAB === */}
         {activeTab === "users" && canAccessUsers && (
           <div className="space-y-3">
+            {accounts.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/30 p-3">
+                <div className="flex items-center gap-3">
+                  <Checkbox 
+                    checked={accounts.length > 0 && selectedUserIds.length === accounts.filter(a => a.email.toLowerCase() !== "bangadhipati@gmail.com").length}
+                    onCheckedChange={toggleSelectAllUsers}
+                    id="select-all-users"
+                  />
+                  <label htmlFor="select-all-users" className="font-heading text-xs font-semibold tracking-wider text-muted-foreground uppercase cursor-pointer">
+                    {selectedUserIds.length > 0 ? `${selectedUserIds.length} Selected` : "Select All"}
+                  </label>
+                </div>
+                {selectedUserIds.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => setIsBulkDeletingUsers(true)}
+                      className="h-8 font-heading text-[10px] tracking-wider uppercase"
+                    >
+                      <Trash2 className="mr-1.5 h-3 w-3" /> Remove Selected
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setSelectedUserIds([])}
+                      className="h-8 font-heading text-[10px] tracking-wider uppercase text-muted-foreground"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
             {accounts.map((acc) => {
               const roleInfo = ROLE_LABELS[acc.role];
               const RoleIcon = roleInfo.icon;
+              const isPrimaryAdmin = acc.email.toLowerCase() === "bangadhipati@gmail.com";
+
               return (
-                <div key={acc._id} className="rounded-xl border border-border bg-card p-3 sm:p-4">
+                <div key={acc._id} className={`rounded-xl border transition-all p-3 sm:p-4 ${
+                  selectedUserIds.includes(acc._id) ? "border-primary/50 bg-primary/5" : "border-border bg-card"
+                }`}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/20 font-heading text-sm font-bold text-primary">
-                      {acc.name.charAt(0)}
+                    <div className="flex items-center gap-3">
+                      <Checkbox 
+                        checked={selectedUserIds.includes(acc._id)}
+                        onCheckedChange={() => toggleUserSelection(acc._id)}
+                        disabled={isPrimaryAdmin}
+                      />
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/20 font-heading text-sm font-bold text-primary">
+                        {acc.name.charAt(0)}
+                      </div>
                     </div>
                     <div className="flex-1 min-w-0">
                       {isAdmin && editingDetails === acc._id ? (
@@ -1006,8 +1363,8 @@ const Dashboard = () => {
                         </button>
                       )}
 
-                      {isAdmin && acc.email.toLowerCase() !== "bangadhipati@gmail.com" && (
-                        <button onClick={() => handleAccountRemove(acc._id)}
+                      {isAdmin && !isPrimaryAdmin && (
+                        <button onClick={() => setUserToDelete(acc._id)}
                           className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:border-destructive hover:text-destructive transition-colors">
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -1173,6 +1530,12 @@ const Dashboard = () => {
                       <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("\n---\n")} title="Horizontal Rule">
                         <Minus className="h-3.5 w-3.5" />
                       </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("$", "$")} title="Math (Inline)">
+                        <Sigma className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("\n$$\n", "\n$$\n")} title="Math Block">
+                        <span className="text-[10px] font-bold">$$</span>
+                      </Button>
                       <div className="mx-1 h-4 w-px bg-border" />
                       <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary" onClick={() => insertMarkdown("[", "](url)")} title="Insert Link">
                         <LinkIcon className="h-3.5 w-3.5" />
@@ -1192,14 +1555,14 @@ const Dashboard = () => {
                           size="sm"
                           disabled={isUploadingContentImage}
                           onClick={() => contentImageInputRef.current?.click()}
-                          className="h-8 px-2 text-[10px] font-heading border border-primary/20 hover:bg-primary/10 text-primary uppercase tracking-wider transition-all"
+                          className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary"
+                          title="Upload Image"
                         >
                           {isUploadingContentImage ? (
-                            <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           ) : (
-                            <Image className="h-3 w-3 mr-1.5" />
+                            <Image className="h-3.5 w-3.5" />
                           )}
-                          {isUploadingContentImage ? "..." : "Image"}
                         </Button>
                       </div>
                     </div>
@@ -1480,6 +1843,141 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Confirmation Dialog for Single Delete */}
+      <AlertDialog open={!!blogToDelete} onOpenChange={(open) => !open && setBlogToDelete(null)}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-primary">Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body text-muted-foreground">
+              This action cannot be undone. This will permanently delete the blog post and remove it from our digital frontlines.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border bg-secondary hover:bg-secondary/80 font-heading">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => blogToDelete && handleDelete(blogToDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-heading"
+            >
+              Delete Post
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmation Dialog for Bulk Delete */}
+      <AlertDialog open={isBulkDeleting} onOpenChange={setIsBulkDeleting}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-primary">Delete {selectedBlogIds.length} Posts?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body text-muted-foreground">
+              This will permanently remove all {selectedBlogIds.length} selected blog posts. This action is irreversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border bg-secondary hover:bg-secondary/80 font-heading">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-heading"
+            >
+              Delete Selected
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Ads Deletion Dialogs */}
+      <AlertDialog open={!!adToDelete} onOpenChange={(open) => !open && setAdToDelete(null)}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-primary">Delete this Ad?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body text-muted-foreground">
+              This will permanently remove this advertisement from the rotation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border bg-secondary hover:bg-secondary/80 font-heading">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => adToDelete && handleDeleteAd(adToDelete)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-heading">Delete Ad</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isBulkDeletingAds} onOpenChange={setIsBulkDeletingAds}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-primary">Delete {selectedAdIds.length} Ads?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body text-muted-foreground">
+              This will permanently remove all {selectedAdIds.length} selected ads.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border bg-secondary hover:bg-secondary/80 font-heading">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDeleteAds} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-heading">Delete Selected</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Alliances Deletion Dialogs */}
+      <AlertDialog open={!!allianceToDelete} onOpenChange={(open) => !open && setAllianceToDelete(null)}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-primary">Remove Alliance?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body text-muted-foreground">
+              Are you sure you want to remove this alliance from the banner?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border bg-secondary hover:bg-secondary/80 font-heading">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => allianceToDelete && handleDeleteAlliance(allianceToDelete)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-heading">Remove Alliance</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isBulkDeletingAlliances} onOpenChange={setIsBulkDeletingAlliances}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-primary">Remove {selectedAllianceIds.length} Alliances?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body text-muted-foreground">
+              This will remove all {selectedAllianceIds.length} selected alliances.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border bg-secondary hover:bg-secondary/80 font-heading">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDeleteAlliances} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-heading">Remove Selected</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Users Deletion Dialogs */}
+      <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-primary">Remove Team Member?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body text-muted-foreground">
+              This will revoke all access for this user. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border bg-secondary hover:bg-secondary/80 font-heading">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => userToDelete && handleAccountRemove(userToDelete)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-heading">Remove Member</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isBulkDeletingUsers} onOpenChange={setIsBulkDeletingUsers}>
+        <AlertDialogContent className="border-border bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-primary">Remove {selectedUserIds.length} Members?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body text-muted-foreground">
+              This will permanently remove the selected team members.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border bg-secondary hover:bg-secondary/80 font-heading">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDeleteUsers} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-heading">Remove Selected</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

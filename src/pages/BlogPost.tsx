@@ -8,6 +8,9 @@ import ServerOfflineOverlay from "@/components/ServerOfflineOverlay";
 import { getOptimizedImageURL } from "@/lib/imageUtils";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 const AUTHOR_BIOS: Record<string, string> = {
   "Debarghya Bhowmick": "Computer Science Engineer · Core & Founding Member of GW",
@@ -238,7 +241,8 @@ const BlogPostPage = () => { // Renamed to BlogPostPage
             <article className="py-8 sm:py-12 md:py-14 max-w-3xl mx-auto">
               <div className="font-body text-[15px] leading-[1.8] text-secondary-foreground/80 sm:text-base sm:leading-[1.85] md:text-[17px] md:leading-[1.9]">
                 <ReactMarkdown 
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
                   className="prose prose-invert max-w-none 
                     prose-headings:font-display prose-headings:font-bold prose-headings:tracking-wide prose-headings:text-foreground
                     prose-h2:border-l-4 prose-h2:border-primary prose-h2:pl-4 prose-h2:mt-10 prose-h2:mb-4
