@@ -1,3 +1,4 @@
+// src/pages/Dashboard.tsx
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
@@ -31,7 +32,8 @@ import Navbar from "@/components/Navbar";
 import ServerOfflineOverlay from "@/components/ServerOfflineOverlay";
 import api from "@/api";
 
-// ImageUploadField to purely handle URL input
+// ... (ImageUploadField, CategoryDropdown, ROLE_LABELS remain unchanged) ...
+
 interface ImageUploadFieldProps {
   label: string;
   required?: boolean;
@@ -193,23 +195,26 @@ const CategoryDropdown = ({ value, blogs, onChange, inputClass }: { value: strin
   }
 
   return (
-    <select
-      value={existing.includes(value) ? value : value ? "__custom__" : ""}
-      onChange={(e) => {
-        if (e.target.value === "__new__") { setShowCustom(true); }
-        else onChange(e.target.value);
-      }}
-      className={inputClass}
-    >
-      <option value="">Select category…</option>
-      {existing.map((cat) => (
-        <option key={cat} value={cat}>{cat}</option>
-      ))}
-      {value && !existing.includes(value) && (
-        <option value="__custom__" disabled>{value}</option>
-      )}
-      <option value="__new__">+ New Category</option>
-    </select>
+    <div className="relative">
+      <select
+        value={existing.includes(value) ? value : value ? "__custom__" : ""}
+        onChange={(e) => {
+          if (e.target.value === "__new__") { setShowCustom(true); }
+          else onChange(e.target.value);
+        }}
+        className={`${inputClass} appearance-none cursor-pointer pr-10`}
+      >
+        <option value="" className="bg-[#0f0f0f]">Select category…</option>
+        {existing.map((cat) => (
+          <option key={cat} value={cat} className="bg-[#0f0f0f]">{cat}</option>
+        ))}
+        {value && !existing.includes(value) && (
+          <option value="__custom__" disabled className="bg-[#0f0f0f]">{value}</option>
+        )}
+        <option value="__new__" className="bg-[#0f0f0f] text-primary font-bold">+ New Category</option>
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    </div>
   );
 };
 
@@ -220,23 +225,47 @@ const ROLE_LABELS: Record<UserRole, { label: string; icon: typeof Shield; color:
 };
 
 const Dashboard = () => {
-  const { user, isAdmin, hasRole, accounts, userCount, fetchAccounts, updatePassword, addAccount, removeAccount, updateAccountRole, updateAccountDetails } = useAuth();
+  const { user, isAdmin, hasRole, accounts, userCount, fetchAccounts, updatePassword, addAccount, removeAccount, updateAccountRole, updateAccountDetails, signIn } = useAuth(); // ADD signIn here
   const { ads, rotationInterval, addAd, removeAd, updateAd, setRotationInterval, fetchAds } = useAds();
   const { alliances, addAlliance, updateAlliance, removeAlliance, fetchAlliances } = useAlliances();
   const { blogs, addBlog, updateBlog, removeBlog, totalViews, fetchBlogs, fetchTotalViews, error: contextError } = useBlogs();
 
+  // State for login modal
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   useEffect(() => { window.scrollTo(0, 0); }, []);
+
+  // Effect to show login modal if not authenticated
+  useEffect(() => {
+    if (!user) {
+      setShowLoginModal(true);
+    } else {
+      setShowLoginModal(false);
+      // Once logged in, reset login form states and clear errors
+      setLoginEmail("");
+      setLoginPassword("");
+      setLoginError("");
+      setIsLoggingIn(false);
+    }
+  }, [user]); // Depend on user changing
 
   if (contextError === "Connection lost to server") return <ServerOfflineOverlay />;
 
   // Fetch initial data on mount (contexts handle their own initial fetch, but this ensures they are populated)
   useEffect(() => {
-    fetchBlogs();
-    fetchAds();
-    fetchAlliances();
-    fetchTotalViews();
-    fetchAccounts();
-  }, [fetchBlogs, fetchAds, fetchAlliances, fetchTotalViews, fetchAccounts]);
+    if (user) { // Only fetch dashboard data if authenticated
+      fetchBlogs();
+      fetchAds();
+      fetchAlliances();
+      fetchTotalViews();
+      fetchAccounts();
+    }
+  }, [user, fetchBlogs, fetchAds, fetchAlliances, fetchTotalViews, fetchAccounts]);
 
 
   type TabId = "blogs" | "users" | "ads" | "alliances";
@@ -245,15 +274,45 @@ const Dashboard = () => {
   const canAccessUsers = isAdmin; // Only admin can see the full team list
   const canAccessAlliances = isAdmin;
 
-  const defaultTab: TabId = canAccessBlogs ? "blogs" : canAccessAds ? "ads" : "alliances"; // Adjusted default tab order
-  const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
+  // Derive default based on permissions
+  const defaultTab: TabId = useMemo(() => {
+    if (canAccessBlogs) return "blogs";
+    if (canAccessAds) return "ads";
+    return "alliances";
+  }, [canAccessBlogs, canAccessAds]);
 
+  // Initial state strictly from storage to avoid permission-check races on hard reload
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const saved = localStorage.getItem("gw_dashboard_active_tab");
+    const validTabs: TabId[] = ["blogs", "users", "ads", "alliances"];
+    return (saved && validTabs.includes(saved as TabId)) ? (saved as TabId) : "blogs";
+  });
+
+  // Effect 1: Persist user interaction
   useEffect(() => {
+    if (user) {
+      localStorage.setItem("gw_dashboard_active_tab", activeTab);
+    }
     setSelectedBlogIds([]);
     setSelectedAdIds([]);
     setSelectedAllianceIds([]);
     setSelectedUserIds([]);
-  }, [activeTab]);
+  }, [activeTab, user]);
+
+  // Effect 2: Validate permissions once auth state is resolved
+  useEffect(() => {
+    if (!user) return;
+
+    const isAllowed = 
+      (activeTab === "blogs" && canAccessBlogs) ||
+      (activeTab === "ads" && canAccessAds) ||
+      (activeTab === "users" && canAccessUsers) ||
+      (activeTab === "alliances" && canAccessAlliances);
+
+    if (!isAllowed) {
+      setActiveTab(defaultTab);
+    }
+  }, [user, canAccessBlogs, canAccessAds, canAccessUsers, canAccessAlliances, defaultTab]);
 
   const [editingBlog, setEditingBlog] = useState<BlogPost | null>(null);
   const [showEditor, setShowEditor] = useState(false);
@@ -305,7 +364,90 @@ const Dashboard = () => {
   const [editEmail, setEditEmail] = useState("");
   const [userError, setUserError] = useState("");
 
-  if (!user) return <Navigate to="/" replace />;
+  // Logic for the login modal on this page
+  const handleLoginSubmit = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    const err = await signIn(loginEmail, loginPassword);
+    setIsLoggingIn(false);
+    if (err) {
+      setLoginError(err);
+    } else {
+      setLoginError("");
+      setShowLoginModal(false); // Close login modal on success
+      // User context will now be populated, and component will re-render showing dashboard
+    }
+  };
+
+
+  if (!user) {
+    // If not logged in, render only the login modal
+    return (
+      <>
+        <Navbar /> {/* Keep Navbar */}
+        {showLoginModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => { /* Optionally close modal, but for dashboard, better to require login */ }}>
+            <div className="relative w-full max-w-sm rounded-xl border border-border bg-card p-6 sm:p-8 glow-red" onClick={(e) => e.stopPropagation()}>
+              {/* Optional: Add a close button if you want users to be able to leave without logging in */}
+              {/* <button onClick={() => setShowLoginModal(false)} className="absolute right-3 top-3 rounded-full p-1 text-muted-foreground transition-colors hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button> */}
+              <h2 className="mb-2 text-center font-display text-lg font-bold text-primary text-glow sm:text-xl">MEMBER LOGIN</h2>
+              <p className="mb-5 text-center text-sm text-muted-foreground font-body">Authorized access for team members and administrators</p>
+              {loginError && (
+                <p className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-center text-xs text-destructive font-body">{loginError}</p>
+              )}
+              <div className="mb-3">
+                <label className="mb-1.5 block font-heading text-xs text-muted-foreground tracking-wider uppercase">Email Address</label>
+                <input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className="w-full rounded-lg border border-border bg-secondary/50 px-4 py-2.5 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none" placeholder="your@email.com" />
+              </div>
+              <div className="mb-4">
+                <label className="mb-1.5 block font-heading text-xs text-muted-foreground tracking-wider uppercase">Password</label>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? "text" : "password"}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleLoginSubmit()}
+                    className="w-full rounded-lg border border-border bg-secondary/50 pl-4 pr-11 py-2.5 font-body text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                    placeholder="••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <Button 
+                onClick={handleLoginSubmit} 
+                disabled={isLoggingIn}
+                className="w-full gradient-red font-heading text-sm tracking-wide sm:text-base"
+              >
+                {isLoggingIn ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing In...
+                  </>
+                ) : (
+                  "Sign In"
+                )}
+              </Button>
+              {/* Add a back to home button */}
+              <div className="mt-4 text-center">
+                <Link to="/" className="text-sm text-muted-foreground hover:text-primary">Back to Home</Link>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // If user is logged in, render the actual dashboard content
+  // ... (rest of the Dashboard component content remains largely unchanged, but moved into this block) ...
 
   // Blog handlers
   const handleDelete = async (id: string) => {
@@ -840,7 +982,7 @@ const Dashboard = () => {
 
   const formatViews = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}K` : String(v);
 
-  const inputClass = "w-full rounded-lg border border-border bg-secondary/50 px-3 py-2 font-body text-sm text-foreground focus:border-primary focus:outline-none";
+  const inputClass = "w-full rounded-lg border border-border bg-secondary/50 px-3 py-2 font-body text-sm text-foreground focus:border-primary focus:outline-none [&>option]:bg-[#0f0f0f] [&>option]:text-foreground";
   const labelClass = "mb-1 block font-heading text-xs text-muted-foreground tracking-wider uppercase";
 
   return (
@@ -1307,7 +1449,7 @@ const Dashboard = () => {
                         <div className="flex items-center gap-1">
                           {(["admin", "editor", "ad_manager"] as UserRole[]).map((r) => (
                             <button key={r} onClick={() => handleRoleChange(acc._id, r)}
-                              className={`rounded-md px-2 py-1 text-[10px] font-heading font-semibold transition-all ${
+                              className={`flex-1 rounded-md px-2 py-1 text-[10px] font-heading font-semibold transition-all ${
                                 acc.role === r ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:bg-primary/20"
                               }`}
                             >
@@ -1318,7 +1460,7 @@ const Dashboard = () => {
                             <X className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                      ) : (
+                      ) : isAdmin && (
                         <button
                           onClick={() => isAdmin && acc.email.toLowerCase() !== "bangadhipati@gmail.com" && setEditingRole(acc._id)}
                           className={`flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-heading font-semibold ${roleInfo.color} ${
@@ -1485,6 +1627,8 @@ const Dashboard = () => {
                   onValueChange={(url) => setEditingBlog((prev) => ({ ...prev!, thumbnail: url }))}
                   inputClass={inputClass}
                   labelClass={labelClass}
+                  placeholder="https://example.com/ad-h.jpg"
+                  previewClass="aspect-[3/1]"
                 />
                 <div>
                   <label className={labelClass}>Description <span className="text-muted-foreground/50">(optional)</span></label>
